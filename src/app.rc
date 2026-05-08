@@ -1,0 +1,46 @@
+#include "resource.h"
+#include <winres.h>
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,0
+ PRODUCTVERSION 1,0,0,0
+ FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+#ifdef _DEBUG
+ FILEFLAGS VS_FF_DEBUG
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS VOS__WINDOWS32
+ FILETYPE VFT_APP
+ FILESUBTYPE VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904E4"
+        BEGIN
+            VALUE "CompanyName", "writch\0"
+            VALUE "FileDescription", "APB Config Tool\0"
+            VALUE "FileVersion", "1.0.0.0\0"
+            VALUE "InternalName", "APBConfigHelper\0"
+            VALUE "OriginalFilename", "APBConfigHelper.exe\0"
+            VALUE "ProductName", "APB Config Tool\0"
+            VALUE "ProductVersion", "1.0.0.0\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END
+
+IDR_FONT_BENTONSANS_REGULAR RCDATA "..\\Assets\\fonts\\BentonSans-Regular.ttf"
+
+IDR_IMG_VEHICLE_COYWOLF  RCDATA "..\\Assets\\Images_VehicleItemTypes\\coywolf.png"
+IDR_IMG_VEHICLE_MIRAGE   RCDATA "..\\Assets\\Images_VehicleItemTypes\\mirage.png"
+IDR_IMG_VEHICLE_PIONEER  RCDATA "..\\Assets\\Images_VehicleItemTypes\\pioneer.png"
+IDR_IMG_VEHICLE_VEGAS    RCDATA "..\\Assets\\Images_VehicleItemTypes\\vegas.png"
+
+IDR_IMG_WEAPON_FRAG      RCDATA "..\\Assets\\Images_WeaponItemTypes\\frag_weapon_desc.png"
+IDR_IMG_WEAPON_OSMAW     RCDATA "..\\Assets\\Images_WeaponItemTypes\\osmaw_weapon_desc.png"
+IDR_IMG_WEAPON_STABBANL9 RCDATA "..\\Assets\\Images_WeaponItemTypes\\stabbanl9_weapon_desc.png"
+IDR_IMG_WEAPON_UL3       RCDATA "..\\Assets\\Images_WeaponItemTypes\\ul3_weapon_desc.png"

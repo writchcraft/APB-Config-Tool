@@ -1,0 +1,13 @@
+#pragma once
+
+#define IDR_FONT_BENTONSANS_REGULAR 101
+
+#define IDR_IMG_VEHICLE_COYWOLF     201
+#define IDR_IMG_VEHICLE_MIRAGE      202
+#define IDR_IMG_VEHICLE_PIONEER     203
+#define IDR_IMG_VEHICLE_VEGAS       204
+
+#define IDR_IMG_WEAPON_FRAG         301
+#define IDR_IMG_WEAPON_OSMAW        302
+#define IDR_IMG_WEAPON_STABBANL9    303
+#define IDR_IMG_WEAPON_UL3          304
