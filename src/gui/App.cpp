@@ -154,7 +154,8 @@ static void writeColourScheme(std::ostream& out, const ColourSchemeWidget& colou
     out << "\n" << indent << "}";
 }
 
-static void applyColourSchemeJson(const json& value, ColourSchemeWidget& colours){
+static void applyColourSchemeJson(const json& value, ColourSchemeWidget& colours,
+    bool allowPresetRestore = true){
     if(!value.is_object()) return;
     colours.schemeIdx = jsonInt(value, "scheme_idx", colours.schemeIdx);
     colours.presetEquipped = jsonBool(value, "preset_equipped", colours.presetEquipped);
@@ -174,6 +175,9 @@ static void applyColourSchemeJson(const json& value, ColourSchemeWidget& colours
         }
         if(colours.presetThemeIdx < 0) colours.presetEquipped = false;
     }
+
+    if(!allowPresetRestore && colours.presetEquipped)
+        colours.resetDefaults();
 }
 
 static bool saveConfig(){
@@ -370,7 +374,7 @@ static void loadConfig(){
             copyString(s_weapon.intPath, sizeof(s_weapon.intPath), jsonString(wit, "int_path"));
             copyString(s_weapon.outPath, sizeof(s_weapon.outPath), jsonString(wit, "out_path"));
             s_weapon.workers = std::clamp(jsonInt(wit, "workers", s_weapon.workers), 1, 64);
-            applyColourSchemeJson(wit["colours"], s_weapon.colours);
+            applyColourSchemeJson(wit["colours"], s_weapon.colours, false);
         }
 
         if(root.contains("vehicle_item_types") && root["vehicle_item_types"].is_object()){
