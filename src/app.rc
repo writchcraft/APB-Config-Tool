@@ -44,3 +44,9 @@ IDR_IMG_WEAPON_FRAG      RCDATA "..\\Assets\\Images_WeaponItemTypes\\frag_weapon
 IDR_IMG_WEAPON_OSMAW     RCDATA "..\\Assets\\Images_WeaponItemTypes\\osmaw_weapon_desc.png"
 IDR_IMG_WEAPON_STABBANL9 RCDATA "..\\Assets\\Images_WeaponItemTypes\\stabbanl9_weapon_desc.png"
 IDR_IMG_WEAPON_UL3       RCDATA "..\\Assets\\Images_WeaponItemTypes\\ul3_weapon_desc.png"
+
+IDR_IMG_PLAYER_ROLE_GUNSLINGER   RCDATA "..\\Assets\\Images_PlayerRoles\\gunslinger.png"
+IDR_IMG_PLAYER_ROLE_RIFLEMAN     RCDATA "..\\Assets\\Images_PlayerRoles\\rifleman.png"
+IDR_IMG_PLAYER_ROLE_BURGLAR      RCDATA "..\\Assets\\Images_PlayerRoles\\burglar.png"
+IDR_IMG_PLAYER_ROLE_EPIDEMIC2024 RCDATA "..\\Assets\\Images_PlayerRoles\\epidemic_2024.png"
+IDR_IMG_PLAYER_ROLE_BURGLAR_SHORT RCDATA "..\\Assets\\Images_PlayerRoles\\burglar_short.png"

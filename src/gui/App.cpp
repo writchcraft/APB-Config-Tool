@@ -20,6 +20,7 @@ enum PageId {
     PAGE_VEHICLE, PAGE_WEAPON,
     PAGE_LOCALIZATION, PAGE_ARMAS, PAGE_PLAYER_ROLES, PAGE_HEX_CONVERTER, PAGE_CREDITS,
     PAGE_CONTACTS,
+    PAGE_SETTINGS,
     PAGE_COUNT
 };
 static PageGradientMaker      s_gradient;
@@ -32,6 +33,7 @@ static PagePlayerRoles        s_playerRoles;
 static PageHexConverter       s_hexConverter;
 static PageCredits            s_credits;
 static PageContactDescription s_contacts;
+static PageSettings           s_settings;
 static int s_current = PAGE_GRADIENT;
 
 struct NavItem  { const char* label; int page; };
@@ -42,11 +44,12 @@ static std::vector<NavGroup> s_nav = {
     { "Localization", {{"Localization",PAGE_LOCALIZATION}},  false },
     { "Extras",       {{"ARMAS Scanner",PAGE_ARMAS},{"Player Roles",PAGE_PLAYER_ROLES},{"Contact Description",PAGE_CONTACTS},{"Hex Converter",PAGE_HEX_CONVERTER}}, false },
     { "Credits",      {{"Credits",PAGE_CREDITS}},            false },
+    { "Settings",     {{"Settings",PAGE_SETTINGS}},          false },
 };
 static const char* pageCategory[PAGE_COUNT] = {
     "Colour Edits","Colour Edits",
     "ItemTypes","ItemTypes",
-    "Localization","Extras","Extras","Extras","Credits","Extras"
+    "Localization","Extras","Extras","Extras","Credits","Extras","Settings"
 };
 static bool s_configLoaded = false;
 static std::string s_configStatus;
@@ -437,6 +440,7 @@ static void drawPage(){
         case PAGE_HEX_CONVERTER:s_hexConverter.draw(); break;
         case PAGE_CREDITS:      s_credits.draw();      break;
         case PAGE_CONTACTS:     s_contacts.draw();     break;
+        case PAGE_SETTINGS:     s_settings.draw();     break;
     }
 }
 

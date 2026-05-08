@@ -154,6 +154,18 @@ static std::string trim(std::string s) {
     return s;
 }
 
+static std::string normaliseColorClosingTags(std::string s) {
+    static const std::string legacyTag = "</Color>";
+    static const std::string apbTag = "<Color:/>";
+
+    size_t pos = 0;
+    while ((pos = s.find(legacyTag, pos)) != std::string::npos) {
+        s.replace(pos, legacyTag.size(), apbTag);
+        pos += apbTag.size();
+    }
+    return s;
+}
+
 static std::string stripUnlockPrefix(std::string s) {
     s = trim(std::move(s));
     const std::string prefix = "Unlock:";
@@ -622,7 +634,7 @@ static std::string buildOutputText(
             wroteContact = true;
         }
     }
-    return out.str();
+    return normaliseColorClosingTags(out.str());
 }
 
 } // namespace
@@ -676,17 +688,18 @@ ContactDescriptionsResult generateContactDescriptionsFile(
             outputEntry.category = (int)categoriseContact(contactKey, contact);
 
             if (inputEntry.hasTitle) {
-                outputEntry.lines.push_back(inputEntry.titleKey + "=" + inputEntry.titleValue);
+                outputEntry.lines.push_back(
+                    inputEntry.titleKey + "=" + normaliseColorClosingTags(inputEntry.titleValue));
             } else {
                 outputEntry.lines.push_back("Contacts_" + contactKey + "_Title=" +
-                    contact.value("sTitle", contactKey));
+                    normaliseColorClosingTags(contact.value("sTitle", contactKey)));
             }
 
             const std::string descKey = inputEntry.hasDesc
                 ? inputEntry.descKey
                 : "Contacts_" + contactKey + "_Description";
             if (!inputEntry.hasDesc || generatedDesc != inputEntry.descValue) {
-                outputEntry.lines.push_back(descKey + "=" + generatedDesc);
+                outputEntry.lines.push_back(descKey + "=" + normaliseColorClosingTags(generatedDesc));
                 changedContacts.push_back(std::move(outputEntry));
                 result.updatedKeys.push_back(contactKey);
             }

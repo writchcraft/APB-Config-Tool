@@ -445,6 +445,108 @@ struct PagePlayerRoles {
     std::atomic<bool> cancelRequested{false};
     std::string lastOut;
     bool autoDetectTried = false;
+    std::vector<PreviewCard> previewCards;
+    bool previewCardsInit = false;
+    bool previewCardsShortNames = false;
+
+    void configurePreviewCard(PreviewCard& card, const std::string& imgPath, int resourceId){
+        const bool imageChanged = card.imgPath != imgPath || card.resourceId != resourceId;
+        if(imageChanged){
+            card.release();
+            card.imgPath = imgPath;
+            card.resourceId = resourceId;
+            card.imgW = 0;
+            card.imgH = 0;
+        }
+        card.tryLoad();
+    }
+
+    void initPreviewCards(){
+        if(!previewCardsInit){
+            previewCardsInit = true;
+            previewCards.resize(4);
+        }
+        if(previewCardsShortNames == useShortEquipmentNames && previewCards[0].srv)
+            return;
+
+        previewCardsShortNames = useShortEquipmentNames;
+        configurePreviewCard(previewCards[0], "Assets\\Images_PlayerRoles\\gunslinger.png",
+            IDR_IMG_PLAYER_ROLE_GUNSLINGER);
+        configurePreviewCard(previewCards[1], "Assets\\Images_PlayerRoles\\rifleman.png",
+            IDR_IMG_PLAYER_ROLE_RIFLEMAN);
+        configurePreviewCard(previewCards[2],
+            useShortEquipmentNames
+                ? "Assets\\Images_PlayerRoles\\burglar_short.png"
+                : "Assets\\Images_PlayerRoles\\burglar.png",
+            useShortEquipmentNames
+                ? IDR_IMG_PLAYER_ROLE_BURGLAR_SHORT
+                : IDR_IMG_PLAYER_ROLE_BURGLAR);
+        configurePreviewCard(previewCards[3], "Assets\\Images_PlayerRoles\\epidemic_2024.png",
+            IDR_IMG_PLAYER_ROLE_EPIDEMIC2024);
+    }
+
+    static std::string latestLogLine(const std::string& text){
+        const size_t end = text.find_last_not_of("\r\n\t ");
+        if(end == std::string::npos) return {};
+        size_t start = text.find_last_of('\n', end);
+        start = (start == std::string::npos) ? 0 : start + 1;
+        std::string line = text.substr(start, end - start + 1);
+        while(!line.empty() && (line.back() == '\r' || line.back() == '\n'))
+            line.pop_back();
+        return line;
+    }
+
+    void drawPreviewGallery(){
+        SectionLabel("Preview");
+
+        const std::string status = latestLogLine(log.get());
+        if(!status.empty()){
+            ImGui::TextColored(Col::SUBTEXT, "%s", status.c_str());
+            ImGui::Spacing();
+        }
+
+        const float availW = ImGui::GetContentRegionAvail().x;
+        const float gap = 12.f;
+        const float preferredImageW = 245.f;
+        const float minimumImageW = 170.f;
+        int columns = 1;
+        for(int candidate = 4; candidate >= 1; --candidate){
+            const float candidateW = (availW - gap * (candidate - 1)) / candidate;
+            if(candidateW >= minimumImageW){
+                columns = candidate;
+                break;
+            }
+        }
+        const float imageW = std::min(preferredImageW,
+            (availW - gap * (columns - 1)) / columns);
+
+        ImGui::BeginChild("##prolespreview", {0, 0}, false);
+        for(int i = 0; i < (int)previewCards.size(); ++i){
+            auto& card = previewCards[i];
+            card.tryLoad();
+
+            if(columns > 1 && (i % columns) != 0)
+                ImGui::SameLine(0.f, gap);
+            else if(i > 0)
+                ImGui::Spacing();
+
+            if(card.srv){
+                const float scale = imageW / (card.imgW > 0 ? (float)card.imgW : imageW);
+                const float imageH = (card.imgH > 0 ? (float)card.imgH : imageW) * scale;
+                ImGui::Image((ImTextureID)card.srv, {imageW, imageH});
+                ImGui::GetWindowDrawList()->AddRect(
+                    ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
+                    ImGui::GetColorU32(Col::BORDER));
+            } else {
+                ImGui::BeginChild(
+                    ("##prolesmissing" + std::to_string(i)).c_str(),
+                    {imageW, imageW * 1.8f}, true);
+                ImGui::TextColored(Col::SUBTEXT, "Preview unavailable");
+                ImGui::EndChild();
+            }
+        }
+        ImGui::EndChild();
+    }
 
     void ensureDefaultIntPath(){
         if(autoDetectTried || intPath[0]) return;
@@ -521,6 +623,7 @@ struct PagePlayerRoles {
     }
 
     void draw(){
+        initPreviewCards();
         ensureDefaultIntPath();
         ImGui::BeginChild("##proles", {0, 0}, false);
         SectionLabel("Player Roles – generate organized PlayerRoles output from APB.DB");
@@ -606,9 +709,7 @@ struct PagePlayerRoles {
             OpenInExplorer(lastOut);
 
         ImGui::Spacing();
-        std::string t = log.get();
-        ImGui::InputTextMultiline("##proleslog", (char*)t.c_str(), t.size() + 1, {-1, -1},
-            ImGuiInputTextFlags_ReadOnly);
+        drawPreviewGallery();
         ImGui::EndChild();
     }
 };
@@ -1465,6 +1566,35 @@ struct PageCredits {
         ImGui::TextColored(Col::SUBTEXT,
             "This tool is not affiliated with Little Orbit or GamersFirst.\n"
             "APB: Reloaded(tm) is a trademark of Little Orbit LLC.");
+        ImGui::EndChild();
+    }
+};
+
+// ══════════════════════════════════════════════════════════════════════════
+// PageSettings
+// ══════════════════════════════════════════════════════════════════════════
+struct PageSettings {
+    void draw(){
+        ImGui::BeginChild("##settings",{0,0},false);
+        SectionLabel("Settings");
+
+        SectionLabel("Themes");
+        ImGui::TextWrapped("Theme presets are loaded from this folder. Add or edit JSON files here, then reload themes from the tool pages.");
+        ImGui::Spacing();
+
+        const std::string themesDir = ThemeLibrary::themesDir();
+        std::filesystem::create_directories(themesDir);
+
+        char themePathBuf[MAX_PATH * 2] = {};
+        std::snprintf(themePathBuf, sizeof(themePathBuf), "%s", themesDir.c_str());
+
+        ImGui::Text("Folder:");
+        ImGui::SetNextItemWidth(-150.f);
+        ImGui::InputText("##themesFolderPath", themePathBuf, sizeof(themePathBuf), ImGuiInputTextFlags_ReadOnly);
+        ImGui::SameLine();
+        if(ImGui::Button("Open Themes Folder", {140.f, 0.f}))
+            OpenInExplorer(themesDir);
+
         ImGui::EndChild();
     }
 };
