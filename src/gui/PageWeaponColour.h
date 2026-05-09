@@ -42,6 +42,8 @@ struct PageWeaponColour {
     char inventoryIntPath[MAX_PATH] = {};
     char weaponSearch[256] = {};
     int fontIdx = 0;
+    int specificSortIdx = 1;
+    int specificCategoryFilterIdx = 0;
     int modeIdx = 2; // legacy config compatibility
     float singleCol[3] = {1.f,1.f,1.f}; // legacy config compatibility
     float gradStart[3] = {1.f,1.f,1.f}; // legacy config compatibility
@@ -74,6 +76,7 @@ struct PageWeaponColour {
     std::vector<SpecificWeaponState> specificWeapons;
 
     static constexpr const char* MODES[] = {"SOLID","Stepped","Smooth","Triple Gradient"};
+    static constexpr const char* SPECIFIC_SORTS[] = {"APB Class Order","Weapon Name"};
 
     PageWeaponColour(){
         fonts = availableFonts();
@@ -111,6 +114,52 @@ struct PageWeaponColour {
     static bool matchesSearch(const SpecificWeaponState& st, const char* filter){
         if(!filter || !*filter) return true;
         return st.searchText.find(lowerCopy(filter)) != std::string::npos;
+    }
+
+    int categoryOrder(const std::string& categoryToken) const{
+        for(int i = 0; i < (int)gunTypes.size(); ++i){
+            if(gunTypes[i].categoryToken == categoryToken)
+                return i;
+        }
+        return (int)gunTypes.size();
+    }
+
+    const char* categoryFilterLabel(int idx) const{
+        if(idx <= 0) return "All Classes";
+        const int gunIdx = idx - 1;
+        if(gunIdx >= 0 && gunIdx < (int)gunTypes.size())
+            return gunTypes[gunIdx].label.c_str();
+        return "All Classes";
+    }
+
+    bool matchesCategoryFilter(const SpecificWeaponState& st) const{
+        if(specificCategoryFilterIdx <= 0) return true;
+        const int gunIdx = specificCategoryFilterIdx - 1;
+        return gunIdx >= 0 && gunIdx < (int)gunTypes.size()
+            && st.categoryToken == gunTypes[gunIdx].categoryToken;
+    }
+
+    bool isSpecificVisible(const SpecificWeaponState& st) const{
+        return matchesCategoryFilter(st) && matchesSearch(st, weaponSearch);
+    }
+
+    void sortSpecificWeapons(){
+        std::stable_sort(specificWeapons.begin(), specificWeapons.end(),
+            [this](const SpecificWeaponState& a, const SpecificWeaponState& b){
+                if(specificSortIdx == 1){
+                    if(a.displayName != b.displayName)
+                        return a.displayName < b.displayName;
+                    return a.fullKey < b.fullKey;
+                }
+
+                const int aOrder = categoryOrder(a.categoryToken);
+                const int bOrder = categoryOrder(b.categoryToken);
+                if(aOrder != bOrder)
+                    return aOrder < bOrder;
+                if(a.displayName != b.displayName)
+                    return a.displayName < b.displayName;
+                return a.fullKey < b.fullKey;
+            });
     }
 
     void autoDetectDefaultPaths(){
@@ -262,6 +311,7 @@ struct PageWeaponColour {
             std::snprintf(buf, sizeof(buf), "Loaded %d weapons from InventoryItemTypes.INT.",
                 (int)specificWeapons.size());
             inventoryScanStatus = buf;
+            sortSpecificWeapons();
         } catch(const std::exception& e){
             specificWeapons.clear();
             inventoryScanStatus = std::string("Scan failed: ") + e.what();
@@ -269,50 +319,174 @@ struct PageWeaponColour {
     }
 
     void drawPresetConfig(){
-        SectionLabel("Preset Config");
-        SectionNote("Use a reusable preset as the starting point for categories or specific weapon overrides.");
+        SectionLabel("Quick Preset");
+        SectionNote("Build one palette here, then stamp it onto category rules or selected weapon overrides.");
         ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::ITEM_BG);
-        ImGui::BeginChild("##wcPresetConfig", {0.f, 146.f}, true);
+        ImGui::BeginChild("##wcPresetConfig", {0.f, 128.f}, true);
 
-        ImGui::Text("Preset Name:"); ImGui::SameLine(112.f);
-        ImGui::SetNextItemWidth(220.f);
-        ImGui::InputText("##wcPresetName", presetName, sizeof(presetName));
-        ImGui::SameLine();
-        ImGui::Text("Mode:"); ImGui::SameLine();
-        ImGui::SetNextItemWidth(170.f);
-        if(ImGui::BeginCombo("##wcPresetMode", MODES[presetModeIdx])){
-            for(int m=0;m<4;++m){
-                if(ImGui::Selectable(MODES[m], presetModeIdx==m))
-                    presetModeIdx = m;
-                if(presetModeIdx==m) ImGui::SetItemDefaultFocus();
+        if(BeginSectionTable("##wcPresetGrid", 96.f, 0.f)){
+            BeginSectionRow("Preset");
+            ImGui::SetNextItemWidth(220.f);
+            ImGui::InputText("##wcPresetName", presetName, sizeof(presetName));
+            ImGui::SameLine();
+            ImGui::TextUnformatted("Mode");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(170.f);
+            if(ImGui::BeginCombo("##wcPresetMode", MODES[presetModeIdx])){
+                for(int m=0;m<4;++m){
+                    if(ImGui::Selectable(MODES[m], presetModeIdx==m))
+                        presetModeIdx = m;
+                    if(presetModeIdx==m) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
             }
-            ImGui::EndCombo();
+
+            BeginSectionRow("Colours");
+            drawPresetColourControls();
+            EndSectionTable();
         }
 
         ImGui::Spacing();
-        ImGui::Text("Colours:"); ImGui::SameLine(112.f);
-        drawPresetColourControls();
-
-        ImGui::Spacing();
-        if(ImGui::Button("Apply to Enabled Categories##wcPreset", {190.f, 28.f})){
+        if(ImGui::Button("Apply to Enabled Categories##wcPreset", {200.f, 28.f})){
             for(auto& st : categories)
                 if(st.enabled) applyPresetToRule(st);
         }
         ImGui::SameLine();
-        if(ImGui::Button("Apply to All Categories##wcPreset", {164.f, 28.f})){
+        if(ImGui::Button("Apply to All Categories##wcPreset", {176.f, 28.f})){
             for(auto& st : categories)
                 applyPresetToRule(st);
         }
         ImGui::SameLine();
-        if(ImGui::Button("Apply to Selected Weapons##wcPreset", {182.f, 28.f})){
+        if(ImGui::Button("Apply to Selected Weapons##wcPreset", {190.f, 28.f})){
             for(auto& st : specificWeapons)
                 if(st.enabled) applyPresetToRule(st);
         }
-        ImGui::Spacing();
-        ImGui::TextColored(Col::SUBTEXT, "Saved with app config when OK is pressed.");
+        ImGui::TextColored(Col::SUBTEXT, "This preset is just a shortcut for stamping colour rules.");
 
         ImGui::EndChild();
         ImGui::PopStyleColor();
+    }
+
+    void drawCategorySection(){
+        SectionLabel("Category Rules");
+        SectionNote("Start here. Most setups only need category rules, with one palette per weapon class.");
+
+        if(ImGui::BeginTable("##wcCategoryToolbar", 2,
+            ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoSavedSettings))
+        {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextColored(Col::SUBTEXT, "%d categories", (int)gunTypes.size());
+            ImGui::TableSetColumnIndex(1);
+            const float actionWidth = 110.f;
+            const float rightEdge = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
+            ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), rightEdge - actionWidth * 2.f - 8.f));
+            if(ImGui::SmallButton("Enable All##wcCats")){
+                for(auto& st : categories) st.enabled = true;
+            }
+            ImGui::SameLine();
+            if(ImGui::SmallButton("Clear All##wcCats")){
+                for(auto& st : categories) st.enabled = false;
+            }
+            ImGui::EndTable();
+        }
+
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::ITEM_BG);
+        ImGui::BeginChild("##wcCategoriesPanel", {0.f, 404.f}, true);
+        if(ImGui::BeginTable("##wcCategoriesSimple", 3,
+            ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings | ImGuiTableFlags_ScrollY,
+            {-1.f, 0.f}))
+        {
+            ImGui::TableSetupColumn("Category", ImGuiTableColumnFlags_WidthFixed, 210.f);
+            ImGui::TableSetupColumn("Mode", ImGuiTableColumnFlags_WidthFixed, 160.f);
+            ImGui::TableSetupColumn("Colours", ImGuiTableColumnFlags_WidthStretch);
+
+            for(int i = 0; i < (int)gunTypes.size(); ++i){
+                auto& st = categories[i];
+                ImGui::PushID(i);
+                ImGui::TableNextRow();
+
+                ImGui::TableSetColumnIndex(0);
+                ImGui::AlignTextToFramePadding();
+                ImGui::Checkbox("##enabled", &st.enabled);
+                ImGui::SameLine();
+                ImGui::BeginGroup();
+                ImGui::TextUnformatted(gunTypes[i].label.c_str());
+                ImGui::TextColored(Col::SUBTEXT, "%s", gunTypes[i].categoryToken.c_str());
+                ImGui::EndGroup();
+                if(ImGui::IsItemHovered())
+                    ImGui::SetTooltip("%s", gunTypes[i].keyPrefix.c_str());
+
+                ImGui::TableSetColumnIndex(1);
+                drawModeCombo("##mode", st);
+
+                ImGui::TableSetColumnIndex(2);
+                drawColourControls("category", i, st);
+
+                ImGui::PopID();
+            }
+
+            ImGui::EndTable();
+        }
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+    }
+
+    void drawFileSettingsSection(){
+        SectionLabel("File Settings");
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::ITEM_BG);
+        ImGui::BeginChild("##wcFileConfig", {0.f, 78.f}, true);
+        if(BeginSectionTable("##wcFileGrid", 92.f, 78.f)){
+            BeginSectionRow("GER File");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputText("##wcpath", filePath, sizeof(filePath));
+            NextSectionAction();
+            if(ImGui::Button("Browse##wc")){
+                std::string s;
+                if(BrowseFile(s,"GER Files\0*.ger;*.GER\0All Files\0*.*\0\0"))
+                    std::snprintf(filePath, sizeof(filePath), "%s", s.c_str());
+            }
+
+            BeginSectionRow("Font");
+            ImGui::SetNextItemWidth(360.f);
+            if(fontIdx < 0 || fontIdx >= (int)fonts.size()) fontIdx = 0;
+            if(ImGui::BeginCombo("##wcfont", fonts.empty() ? "None" : fonts[fontIdx].c_str())){
+                for(int i = 0; i < (int)fonts.size(); ++i){
+                    if(ImGui::Selectable(fonts[i].c_str(), fontIdx == i)) fontIdx = i;
+                    if(fontIdx == i) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+            EndSectionTable();
+        }
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+    }
+
+    void drawIgnoreRulesSection(){
+        ImGui::Spacing();
+        SectionLabel("Ignore Rules");
+        if(ImGui::CollapsingHeader("Edit Ignore Rules", ImGuiTreeNodeFlags_None)){
+            ImGui::TextColored(Col::SUBTEXT, "One key, key prefix, pasted line, or substring per line.");
+            ImGui::InputTextMultiline("##wcIgnoreList", ignoreList, sizeof(ignoreList), {-1.f, 78.f});
+        } else {
+            ImGui::TextColored(Col::SUBTEXT, "Leave this alone unless you need to exclude specific keys.");
+        }
+    }
+
+    void drawRunAndLogSections(){
+        SectionLabel("Run");
+        bool busy = running.load();
+        if(busy) ImGui::BeginDisabled();
+        if(RunButton("Run##wc")) startAction();
+        if(busy) ImGui::EndDisabled();
+        ImGui::SameLine();
+        if(!lastOut.empty() && ImGui::Button("Open Output", {110,32})) OpenInExplorer(lastOut);
+        if(busy){ ImGui::SameLine(); ImGui::TextColored(Col::YELLOW, "Running..."); }
+
+        SectionLabel("Log");
+        std::string logText = log.get();
+        ReadOnlyLogBox("##wclog", logText, {-1.f, 0.f});
     }
 
     GunTypeColourSettings buildCategorySettings(int idx) const {
@@ -377,11 +551,11 @@ struct PageWeaponColour {
     }
 
     void drawSpecificWeaponsSection(){
-        SectionLabel("Specific Weapon");
-        SectionNote("Load weapon entries from InventoryItemTypes.INT when category-level colouring needs individual exceptions.");
+        SectionLabel("Specific Weapon Overrides");
+        SectionNote("Use this only when one weapon needs to break away from its category rule.");
 
         ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::ITEM_BG);
-        ImGui::BeginChild("##wcSpecificConfig", {0.f, 102.f}, true);
+        ImGui::BeginChild("##wcSpecificConfig", {0.f, 128.f}, true);
 
         ImGui::Text("Inventory INT:"); ImGui::SameLine();
         ImGui::SetNextItemWidth(-156.f);
@@ -399,18 +573,46 @@ struct PageWeaponColour {
         ImGui::TextColored(Col::SUBTEXT, "%s", inventoryScanStatus.c_str());
         ImGui::TextColored(Col::SUBTEXT, "Specific weapon rules override category rules when both match.");
 
-        ImGui::Text("Filter:"); ImGui::SameLine();
-        ImGui::SetNextItemWidth(260.f);
+        ImGui::Text("Search:"); ImGui::SameLine();
+        ImGui::SetNextItemWidth(200.f);
         ImGui::InputText("##wcWeaponSearch", weaponSearch, sizeof(weaponSearch));
+        ImGui::SameLine();
+        ImGui::Text("Class:"); ImGui::SameLine();
+        ImGui::SetNextItemWidth(160.f);
+        if(ImGui::BeginCombo("##wcSpecificClass", categoryFilterLabel(specificCategoryFilterIdx))){
+            if(ImGui::Selectable("All Classes", specificCategoryFilterIdx == 0))
+                specificCategoryFilterIdx = 0;
+            if(specificCategoryFilterIdx == 0) ImGui::SetItemDefaultFocus();
+            for(int i = 0; i < (int)gunTypes.size(); ++i){
+                const bool selected = (specificCategoryFilterIdx == i + 1);
+                if(ImGui::Selectable(gunTypes[i].label.c_str(), selected))
+                    specificCategoryFilterIdx = i + 1;
+                if(selected) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::SameLine();
+        ImGui::Text("Sort:"); ImGui::SameLine();
+        ImGui::SetNextItemWidth(170.f);
+        if(ImGui::BeginCombo("##wcSpecificSort", SPECIFIC_SORTS[specificSortIdx])){
+            for(int i = 0; i < 2; ++i){
+                if(ImGui::Selectable(SPECIFIC_SORTS[i], specificSortIdx == i)){
+                    specificSortIdx = i;
+                    sortSpecificWeapons();
+                }
+                if(specificSortIdx == i) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
         ImGui::SameLine();
         if(ImGui::SmallButton("All Visible##wcSpecific")){
             for(auto& st : specificWeapons)
-                if(matchesSearch(st, weaponSearch)) st.enabled = true;
+                if(isSpecificVisible(st)) st.enabled = true;
         }
         ImGui::SameLine();
         if(ImGui::SmallButton("None Visible##wcSpecific")){
             for(auto& st : specificWeapons)
-                if(matchesSearch(st, weaponSearch)) st.enabled = false;
+                if(isSpecificVisible(st)) st.enabled = false;
         }
         ImGui::SameLine();
         if(ImGui::SmallButton("Clear Search##wcSpecific"))
@@ -426,23 +628,22 @@ struct PageWeaponColour {
 
         int visibleCount = 0;
         for(const auto& st : specificWeapons)
-            if(matchesSearch(st, weaponSearch)) ++visibleCount;
+            if(isSpecificVisible(st)) ++visibleCount;
         ImGui::TextColored(Col::SUBTEXT, "%d weapons loaded, %d visible.", (int)specificWeapons.size(), visibleCount);
 
-        if(ImGui::BeginTable("##wcSpecificWeapons", 5,
-            ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY,
+        if(ImGui::BeginTable("##wcSpecificWeapons", 4,
+            ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY,
             {-1.f, 320.f}))
         {
             ImGui::TableSetupColumn("Apply", ImGuiTableColumnFlags_WidthFixed, 52.f);
-            ImGui::TableSetupColumn("Weapon", ImGuiTableColumnFlags_WidthFixed, 250.f);
-            ImGui::TableSetupColumn("Category", ImGuiTableColumnFlags_WidthFixed, 110.f);
+            ImGui::TableSetupColumn("Weapon", ImGuiTableColumnFlags_WidthFixed, 340.f);
             ImGui::TableSetupColumn("Mode", ImGuiTableColumnFlags_WidthFixed, 150.f);
             ImGui::TableSetupColumn("Colours", ImGuiTableColumnFlags_WidthStretch);
             ImGui::TableHeadersRow();
 
             for(int i = 0; i < (int)specificWeapons.size(); ++i){
                 auto& st = specificWeapons[i];
-                if(!matchesSearch(st, weaponSearch))
+                if(!isSpecificVisible(st))
                     continue;
 
                 ImGui::PushID(i);
@@ -453,16 +654,14 @@ struct PageWeaponColour {
 
                 ImGui::TableSetColumnIndex(1);
                 ImGui::TextUnformatted(st.displayName.c_str());
+                ImGui::TextColored(Col::SUBTEXT, "%s", st.categoryToken.c_str());
                 if(ImGui::IsItemHovered())
                     ImGui::SetTooltip("%s", st.fullKey.c_str());
 
                 ImGui::TableSetColumnIndex(2);
-                ImGui::TextUnformatted(st.categoryToken.c_str());
-
-                ImGui::TableSetColumnIndex(3);
                 drawModeCombo("##mode", st);
 
-                ImGui::TableSetColumnIndex(4);
+                ImGui::TableSetColumnIndex(3);
                 drawColourControls("specific", i, st);
 
                 ImGui::PopID();
@@ -485,115 +684,35 @@ struct PageWeaponColour {
 
         ImGui::BeginChild("##wc",{0,0},false);
         SectionLabel("Weapon Colour - InventoryItemTypes.GER");
-        SectionNote("Organize rules in layers: base file settings first, reusable presets second, then category and specific weapon overrides.");
+        SectionNote("Set the file, choose a font, build your category colours here, then use Specific Weapon Overrides only when individual weapons need exceptions.");
 
-        SectionLabel("File Settings");
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::ITEM_BG);
-        ImGui::BeginChild("##wcFileConfig", {0.f, 74.f}, true);
-        ImGui::Text("GER File:"); ImGui::SameLine();
-        ImGui::SetNextItemWidth(-80);
-        ImGui::InputText("##wcpath", filePath, sizeof(filePath));
-        ImGui::SameLine();
-        if(ImGui::Button("Browse##wc")){
-            std::string s;
-            if(BrowseFile(s,"GER Files\0*.ger;*.GER\0All Files\0*.*\0\0"))
-                std::snprintf(filePath, sizeof(filePath), "%s", s.c_str());
-        }
-
-        ImGui::Text("Font:"); ImGui::SameLine();
-        ImGui::SetNextItemWidth(360);
-        if(fontIdx < 0 || fontIdx >= (int)fonts.size()) fontIdx = 0;
-        if(ImGui::BeginCombo("##wcfont", fonts.empty() ? "None" : fonts[fontIdx].c_str())){
-            for(int i = 0; i < (int)fonts.size(); ++i){
-                if(ImGui::Selectable(fonts[i].c_str(), fontIdx == i)) fontIdx = i;
-                if(fontIdx == i) ImGui::SetItemDefaultFocus();
-            }
-            ImGui::EndCombo();
-        }
-
-        ImGui::SameLine();
-        if(ImGui::SmallButton("All##wcCats")){
-            for(auto& st : categories) st.enabled = true;
-        }
-        ImGui::SameLine();
-        if(ImGui::SmallButton("None##wcCats")){
-            for(auto& st : categories) st.enabled = false;
-        }
-        ImGui::EndChild();
-        ImGui::PopStyleColor();
+        drawFileSettingsSection();
 
         drawPresetConfig();
+        drawCategorySection();
+        drawIgnoreRulesSection();
+        drawRunAndLogSections();
+        ImGui::EndChild();
+    }
 
-        SectionLabel("Rule Sets");
-        if(ImGui::BeginTabBar("##wcModeTabs")){
-            if(ImGui::BeginTabItem("Weapon Categories")){
-                SectionLabel("Weapon Categories");
-
-                if(ImGui::BeginTable("##wcCategories", 4,
-                    ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY,
-                    {-1.f, 578.f}))
-                {
-                    ImGui::TableSetupColumn("Apply", ImGuiTableColumnFlags_WidthFixed, 52.f);
-                    ImGui::TableSetupColumn("Gun type", ImGuiTableColumnFlags_WidthFixed, 170.f);
-                    ImGui::TableSetupColumn("Mode", ImGuiTableColumnFlags_WidthFixed, 150.f);
-                    ImGui::TableSetupColumn("Colours", ImGuiTableColumnFlags_WidthStretch);
-                    ImGui::TableHeadersRow();
-
-                    for(int i = 0; i < (int)gunTypes.size(); ++i){
-                        auto& st = categories[i];
-                        ImGui::PushID(i);
-                        ImGui::TableNextRow();
-
-                        ImGui::TableSetColumnIndex(0);
-                        ImGui::Checkbox("##enabled", &st.enabled);
-
-                        ImGui::TableSetColumnIndex(1);
-                        ImGui::TextUnformatted(gunTypes[i].label.c_str());
-                        if(ImGui::IsItemHovered())
-                            ImGui::SetTooltip("%s", gunTypes[i].keyPrefix.c_str());
-
-                        ImGui::TableSetColumnIndex(2);
-                        drawModeCombo("##mode", st);
-
-                        ImGui::TableSetColumnIndex(3);
-                        drawColourControls("category", i, st);
-
-                        ImGui::PopID();
-                    }
-
-                    ImGui::EndTable();
-                }
-
-                ImGui::EndTabItem();
-            }
-
-            if(ImGui::BeginTabItem("Specific Weapon")){
-                drawSpecificWeaponsSection();
-                ImGui::EndTabItem();
-            }
-
-            ImGui::EndTabBar();
+    void drawSpecificOverridesPage(){
+        if(autoDetectPending){
+            autoDetectPending = false;
+            autoDetectDefaultPaths();
         }
 
-        ImGui::Spacing();
-        SectionLabel("Ignore List");
-        if(ImGui::CollapsingHeader("Show Ignore Rules", ImGuiTreeNodeFlags_DefaultOpen)){
-            ImGui::TextColored(Col::SUBTEXT, "One key, key prefix, pasted line, or substring per line.");
-            ImGui::InputTextMultiline("##wcIgnoreList", ignoreList, sizeof(ignoreList), {-1.f, 78.f});
+        if(inventoryScanPending && inventoryIntPath[0]){
+            inventoryScanPending = false;
+            scanSpecificWeapons();
         }
 
-        SectionLabel("Run");
-        bool busy = running.load();
-        if(busy) ImGui::BeginDisabled();
-        if(RunButton("Run##wc")) startAction();
-        if(busy) ImGui::EndDisabled();
-        ImGui::SameLine();
-        if(!lastOut.empty() && ImGui::Button("Open Output", {110,32})) OpenInExplorer(lastOut);
-        if(busy){ ImGui::SameLine(); ImGui::TextColored(Col::YELLOW, "Running..."); }
+        ImGui::BeginChild("##wcSpecificPage",{0,0},false);
+        SectionLabel("Specific Weapon Overrides - InventoryItemTypes.GER");
+        SectionNote("This tool shares the same GER file, font, and run output as Weapon Colour. Use it for one-off weapon exceptions.");
 
-        SectionLabel("Log");
-        std::string logText = log.get();
-        ReadOnlyLogBox("##wclog", logText, {-1.f, 0.f});
+        drawFileSettingsSection();
+        drawSpecificWeaponsSection();
+        drawRunAndLogSections();
         ImGui::EndChild();
     }
 

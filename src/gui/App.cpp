@@ -21,6 +21,7 @@ enum PageId {
     PAGE_LOCALIZATION, PAGE_ARMAS, PAGE_PLAYER_ROLES, PAGE_HEX_CONVERTER, PAGE_CREDITS,
     PAGE_CONTACTS,
     PAGE_SETTINGS,
+    PAGE_WCOLOUR_SPECIFIC,
     PAGE_COUNT
 };
 static PageGradientMaker      s_gradient;
@@ -39,7 +40,7 @@ static int s_current = PAGE_GRADIENT;
 struct NavItem  { const char* label; int page; };
 struct NavGroup { const char* header; std::vector<NavItem> items; bool open=false; };
 static std::vector<NavGroup> s_nav = {
-    { "Colour Tools", {{"Gradient Maker",PAGE_GRADIENT},{"Weapon Colour",PAGE_WCOLOUR}}, true },
+    { "Colour Tools", {{"Gradient Maker",PAGE_GRADIENT},{"Weapon Colour",PAGE_WCOLOUR},{"Specific Weapon Overrides",PAGE_WCOLOUR_SPECIFIC}}, true },
     { "Stats",        {{"Vehicle Stats",PAGE_VEHICLE},{"Weapon Stats",PAGE_WEAPON}}, false },
     { "Content",      {{"Player Roles",PAGE_PLAYER_ROLES},{"Contact Description",PAGE_CONTACTS}}, false },
     { "Reference",    {{"Localization",PAGE_LOCALIZATION},{"Hex Converter",PAGE_HEX_CONVERTER}}, false },
@@ -49,7 +50,8 @@ static std::vector<NavGroup> s_nav = {
 static const char* pageCategory[PAGE_COUNT] = {
     "Colour Tools","Colour Tools",
     "Stats","Stats",
-    "Reference","Utilities","Content","Reference","Application","Content","Application"
+    "Reference","Utilities","Content","Reference","Application","Content","Application",
+    "Colour Tools"
 };
 static bool s_configLoaded = false;
 static std::string s_configStatus;
@@ -436,6 +438,7 @@ static void drawPage(){
     switch(s_current){
         case PAGE_GRADIENT:     s_gradient.draw();     break;
         case PAGE_WCOLOUR:      s_wcolour.draw();      break;
+        case PAGE_WCOLOUR_SPECIFIC: s_wcolour.drawSpecificOverridesPage(); break;
         case PAGE_VEHICLE:      s_vehicle.draw();      break;
         case PAGE_WEAPON:       s_weapon.draw();       break;
         case PAGE_LOCALIZATION: s_localization.draw(); break;
@@ -452,6 +455,7 @@ static bool selectedToolIsRunning(){
     switch(s_current){
         case PAGE_GRADIENT:      return s_gradient.isActionRunning();
         case PAGE_WCOLOUR:       return s_wcolour.isActionRunning();
+        case PAGE_WCOLOUR_SPECIFIC:return s_wcolour.isActionRunning();
         case PAGE_VEHICLE:       return s_vehicle.isActionRunning();
         case PAGE_WEAPON:        return s_weapon.isActionRunning();
         case PAGE_ARMAS:         return s_armas.isActionRunning();
@@ -465,6 +469,7 @@ static bool selectedToolCanStart(){
     switch(s_current){
         case PAGE_GRADIENT:      return s_gradient.canStartAction();
         case PAGE_WCOLOUR:       return s_wcolour.canStartAction();
+        case PAGE_WCOLOUR_SPECIFIC:return s_wcolour.canStartAction();
         case PAGE_VEHICLE:       return s_vehicle.canStartAction();
         case PAGE_WEAPON:        return s_weapon.canStartAction();
         case PAGE_ARMAS:         return s_armas.canStartAction();
@@ -482,6 +487,7 @@ static void startSelectedTool(){
     switch(s_current){
         case PAGE_GRADIENT:      s_gradient.startAction(); break;
         case PAGE_WCOLOUR:       s_wcolour.startAction();  break;
+        case PAGE_WCOLOUR_SPECIFIC:s_wcolour.startAction(); break;
         case PAGE_VEHICLE:       s_vehicle.startAction();  break;
         case PAGE_WEAPON:        s_weapon.startAction();   break;
         case PAGE_ARMAS:         s_armas.startAction();    break;
@@ -495,6 +501,7 @@ static void cancelSelectedTool(){
     switch(s_current){
         case PAGE_GRADIENT:      s_gradient.cancelAction(); break;
         case PAGE_WCOLOUR:       s_wcolour.cancelAction();  break;
+        case PAGE_WCOLOUR_SPECIFIC:s_wcolour.cancelAction(); break;
         case PAGE_VEHICLE:       s_vehicle.cancelAction();  break;
         case PAGE_WEAPON:        s_weapon.cancelAction();   break;
         case PAGE_ARMAS:         s_armas.cancelAction();    break;
