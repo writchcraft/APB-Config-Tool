@@ -163,39 +163,6 @@ static std::string stripUnlockPrefix(std::string s) {
     return s;
 }
 
-static std::vector<std::string> splitWords(const std::string& text) {
-    std::istringstream ss(text);
-    std::vector<std::string> words;
-    std::string word;
-    while (ss >> word) words.push_back(word);
-    return words;
-}
-
-static std::string joinWords(const std::vector<std::string>& words, size_t begin, size_t end) {
-    std::string out;
-    for (size_t i = begin; i < end; ++i) {
-        if (!out.empty()) out += ' ';
-        out += words[i];
-    }
-    return out;
-}
-
-static std::string summariseChildName(
-    const std::string& name,
-    const std::map<std::string, int>& suffixCounts)
-{
-    const std::vector<std::string> words = splitWords(name);
-    if (words.size() < 2) return name;
-
-    for (size_t len = std::min<size_t>(4, words.size()); len >= 2; --len) {
-        const std::string suffix = joinWords(words, words.size() - len, words.size());
-        auto it = suffixCounts.find(suffix);
-        if (it != suffixCounts.end() && it->second >= 2) return suffix;
-        if (len == 2) break;
-    }
-    return name;
-}
-
 static bool isTitleItem(const json& item) {
     if (!item.is_object()) return false;
     const std::string sapbdb = item.value("sAPBDB", "");
@@ -293,10 +260,6 @@ static std::vector<std::string> collectRewardNames(
 
     const json& childItems = reward["eChildPackage"]["eItems"];
     if (childItems.is_array() && !childItems.empty()) {
-        std::vector<std::string> childNames;
-        childNames.reserve(childItems.size());
-        std::map<std::string, int> suffixCounts;
-
         for (const auto& item : childItems) {
             std::string name = stripUnlockPrefix(item.value("sDisplayName", ""));
             if (name.empty()) continue;
@@ -304,17 +267,8 @@ static std::vector<std::string> collectRewardNames(
                 const std::string alias = shortEquipmentAlias(roleKey, name);
                 if (!alias.empty()) name = alias;
             }
-            childNames.push_back(name);
-
-            const std::vector<std::string> words = splitWords(name);
-            for (size_t len = 2; len <= std::min<size_t>(4, words.size()); ++len) {
-                const std::string suffix = joinWords(words, words.size() - len, words.size());
-                ++suffixCounts[suffix];
-            }
+            addName(name);
         }
-
-        for (const auto& name : childNames)
-            addName(summariseChildName(name, suffixCounts));
     }
 
     return ordered;

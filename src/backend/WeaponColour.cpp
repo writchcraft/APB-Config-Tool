@@ -5,6 +5,7 @@
 #include <regex>
 #include <algorithm>
 #include <cctype>
+#include <set>
 #include <stdexcept>
 #include <windows.h>
 
@@ -115,6 +116,13 @@ static std::string stripTags(const std::string& value){
     return std::regex_replace(value, std::regex("<[^>]*>"), "");
 }
 
+static std::string prettifyToken(std::string token){
+    for(char& ch : token){
+        if(ch == '_') ch = ' ';
+    }
+    return token;
+}
+
 static std::string trim(std::string value){
     size_t start=0;
     while(start<value.size()&&std::isspace((unsigned char)value[start])) ++start;
@@ -167,6 +175,48 @@ static std::string applyMode(const std::string& text,const GunTypeColourSettings
     return std::string(buf)+text+"<Color:/>";
 }
 
+std::vector<WeaponInventoryEntry> scanInventoryWeapons(const std::string& inputPath){
+    std::string text = readAny(inputPath);
+    std::regex lineRx("^(InventoryItemTypes_Weapon_([^_=]+)_(.+)_DisplayName)=(.*)$",
+        std::regex::icase);
+
+    std::vector<WeaponInventoryEntry> out;
+    std::set<std::string> seen;
+    std::istringstream ss(text);
+    std::string line;
+    while(std::getline(ss, line)){
+        if(!line.empty() && line.back() == '\r') line.pop_back();
+
+        std::smatch m;
+        if(!std::regex_match(line, m, lineRx))
+            continue;
+
+        WeaponInventoryEntry entry;
+        entry.fullKey = m[1].str();
+        entry.categoryToken = normCat(correctedCategoryForKey(entry.fullKey, m[2].str()));
+        entry.itemToken = m[3].str();
+        entry.displayName = trim(stripTags(m[4].str()));
+        if(entry.displayName.empty())
+            entry.displayName = prettifyToken(entry.itemToken);
+
+        const std::string dedupeKey = toLower(entry.fullKey);
+        if(!seen.insert(dedupeKey).second)
+            continue;
+
+        out.push_back(std::move(entry));
+    }
+
+    std::sort(out.begin(), out.end(), [](const WeaponInventoryEntry& a, const WeaponInventoryEntry& b){
+        if(a.categoryToken != b.categoryToken)
+            return a.categoryToken < b.categoryToken;
+        if(a.displayName != b.displayName)
+            return a.displayName < b.displayName;
+        return a.fullKey < b.fullKey;
+    });
+
+    return out;
+}
+
 ColourResult applyColourToGerFile(
     const std::string& inputPath,
     const std::vector<GunTypeColourSettings>& settings,
@@ -186,8 +236,13 @@ ColourResult applyColourToGerFile(
     res.inputPath=inputPath; res.outputPath=outPath;
 
     std::map<std::string,GunTypeColourSettings> byCategory;
+    std::map<std::string,GunTypeColourSettings> byFullKey;
     for(const auto& s : settings){
-        if(s.enabled)
+        if(!s.enabled)
+            continue;
+        if(!s.fullKey.empty())
+            byFullKey[toLower(s.fullKey)] = s;
+        else if(!s.categoryToken.empty())
             byCategory[normCat(s.categoryToken)] = s;
     }
     std::vector<std::string> normalizedIgnoredKeys=normalizeIgnoredKeys(ignoredKeys);
@@ -222,8 +277,17 @@ ColourResult applyColourToGerFile(
             std::string val=m[3].str();
             res.weaponsTotal++;
 
-            auto it=byCategory.find(cat);
-            if(it==byCategory.end()){
+            const GunTypeColourSettings* selected = nullptr;
+            auto fullIt = byFullKey.find(toLower(fullKey));
+            if(fullIt != byFullKey.end()){
+                selected = &fullIt->second;
+            } else {
+                auto catIt = byCategory.find(cat);
+                if(catIt != byCategory.end())
+                    selected = &catIt->second;
+            }
+
+            if(!selected){
                 res.skippedRules++;
                 out+=line+"\n";
                 continue;
@@ -231,7 +295,7 @@ ColourResult applyColourToGerFile(
 
             std::string plain=stripTags(val);
             if(plain != val) res.alreadyColoured++;
-            std::string coloured=applyMode(plain,it->second);
+            std::string coloured=applyMode(plain,*selected);
 
             std::string prefix;
             if(fontTag!="None"&&!fontTag.empty()) prefix="<Fonts:"+fontTag+">";

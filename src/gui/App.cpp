@@ -222,6 +222,7 @@ static bool saveConfig(){
 
         out << "  \"weapon_colour\": {\n";
         out << "    \"file_path\": \"" << jsonEscape(s_wcolour.filePath) << "\",\n";
+        out << "    \"inventory_int_path\": \"" << jsonEscape(s_wcolour.inventoryIntPath) << "\",\n";
         out << "    \"mode_idx\": " << s_wcolour.modeIdx << ",\n";
         out << "    \"font_idx\": " << s_wcolour.fontIdx << ",\n";
         out << "    \"single\": "; writeColor(out, s_wcolour.singleCol); out << ",\n";
@@ -350,6 +351,9 @@ static void loadConfig(){
         if(root.contains("weapon_colour") && root["weapon_colour"].is_object()){
             const json& wc = root["weapon_colour"];
             copyString(s_wcolour.filePath, sizeof(s_wcolour.filePath), jsonString(wc, "file_path"));
+            copyString(s_wcolour.inventoryIntPath, sizeof(s_wcolour.inventoryIntPath),
+                jsonString(wc, "inventory_int_path"));
+            s_wcolour.inventoryScanPending = s_wcolour.inventoryIntPath[0] != '\0';
             s_wcolour.modeIdx = std::clamp(jsonInt(wc, "mode_idx", s_wcolour.modeIdx), 0, 1);
             if(!s_wcolour.fonts.empty())
                 s_wcolour.fontIdx = std::clamp(jsonInt(wc, "font_idx", s_wcolour.fontIdx), 0, (int)s_wcolour.fonts.size() - 1);

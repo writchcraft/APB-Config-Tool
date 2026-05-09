@@ -32,6 +32,7 @@ struct GunTypeDefinition {
 };
 struct GunTypeColourSettings {
     std::string categoryToken;
+    std::string fullKey;
     bool enabled=false;
     ColourMode mode=ColourMode::SOLID;
     RGB solid{1,1,1};
@@ -39,7 +40,14 @@ struct GunTypeColourSettings {
     RGB smoothStart{1,1,1}, smoothEnd{1,1,1};
     RGB tripleStart{1,1,1}, tripleMiddle{1,1,1}, tripleEnd{1,1,1};
 };
+struct WeaponInventoryEntry {
+    std::string fullKey;
+    std::string categoryToken;
+    std::string itemToken;
+    std::string displayName;
+};
 std::vector<GunTypeDefinition> weaponGunTypes();
+std::vector<WeaponInventoryEntry> scanInventoryWeapons(const std::string& inputPath);
 struct ColourResult {
     std::string text,inputPath,outputPath,encodingUsed;
     int weaponsTotal=0,alreadyColoured=0,newlyColoured=0,skippedRules=0;

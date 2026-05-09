@@ -41,6 +41,7 @@ struct PageGradientMaker {
     std::string themeStatus;
     bool  themeStatusOk = true;
     bool  needsReload = true;   // reload themes on first draw
+    bool  openThemeNamePopup = false;
     ActiveTab activeTab = ActiveTab::Stepped;
 
     PageGradientMaker(){ }
@@ -67,6 +68,16 @@ struct PageGradientMaker {
             }
         }
         return out;
+    }
+
+    static bool isReservedThemeName(const std::string& value){
+        if(value.size() != 6) return false;
+        return std::tolower((unsigned char)value[0]) == 'c' &&
+               std::tolower((unsigned char)value[1]) == 'u' &&
+               std::tolower((unsigned char)value[2]) == 's' &&
+               std::tolower((unsigned char)value[3]) == 't' &&
+               std::tolower((unsigned char)value[4]) == 'o' &&
+               std::tolower((unsigned char)value[5]) == 'm';
     }
 
     static void writeColor(std::ostream& out, const RGB& color){
@@ -142,6 +153,35 @@ struct PageGradientMaker {
         themeStatusOk = ok;
     }
 
+    void requestThemeNamePopup(){
+        themeStatus.clear();
+        themeStatusOk = false;
+        openThemeNamePopup = true;
+    }
+
+    void drawThemeNamePopup(){
+        if(openThemeNamePopup){
+            ImGui::OpenPopup("##themeNameRequired");
+            openThemeNamePopup = false;
+        }
+
+        ImGui::SetNextWindowSize({320.f, 0.f}, ImGuiCond_Appearing);
+        ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
+            ImGuiCond_Appearing, {0.5f, 0.5f});
+        if(ImGui::BeginPopupModal("##themeNameRequired", nullptr,
+            ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoCollapse))
+        {
+            ImGui::TextUnformatted("Please name this theme");
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+            ImGui::SetCursorPosX((ImGui::GetWindowSize().x - 96.f) * 0.5f);
+            if(RunButton("OK##themeNameRequired", 96.f))
+                ImGui::CloseCurrentPopup();
+            ImGui::EndPopup();
+        }
+    }
+
     // ── Apply a theme to the stepped colours ──────────────────────────────
     void applyThemeHard(const GradientTheme& t){
         hardColCount = (int)t.stepped.size();
@@ -200,8 +240,8 @@ struct PageGradientMaker {
 
     bool saveTheme(ThemeSaveSource source){
         const std::string name = trim(themeName);
-        if(name.empty()){
-            setThemeStatus("Enter a theme name first.", false);
+        if(name.empty() || isReservedThemeName(name)){
+            requestThemeNamePopup();
             return false;
         }
 
@@ -277,6 +317,7 @@ struct PageGradientMaker {
                            int& themeIdx, int nThemes, const std::vector<std::string>& names,
                            const std::function<void(int)>& applyTheme, ThemeSaveSource source){
         constexpr float totalWidth = 360.f;
+        constexpr const char* CUSTOM_DISPLAY = "Custom (unsaved)";
 
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted("Theme:");
@@ -300,16 +341,19 @@ struct PageGradientMaker {
         if(ImGui::BeginPopup("##themePopup")){
             for(int i = 0; i < (int)names.size(); ++i){
                 const bool selected = (themeIdx == i);
-                if(ImGui::Selectable(names[i].c_str(), selected)){
+                const char* label = (i == nThemes) ? CUSTOM_DISPLAY : names[i].c_str();
+                ImGui::PushID(i);
+                if(ImGui::Selectable(label, selected)){
                     if(i < nThemes){
                         themeIdx = i;
                         setThemeName(names[i]);
                         applyTheme(i);
                     } else {
                         themeIdx = nThemes;
-                        if(themeName[0] == '\0') setThemeName("Custom");
+                        themeName[0] = '\0';
                     }
                 }
+                ImGui::PopID();
                 if(selected) ImGui::SetItemDefaultFocus();
             }
             ImGui::EndPopup();
@@ -526,6 +570,7 @@ struct PageGradientMaker {
 
             ImGui::EndTabBar();
         }
+        drawThemeNamePopup();
         ImGui::EndChild();
     }
 };
