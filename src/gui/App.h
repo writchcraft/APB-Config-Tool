@@ -427,4 +427,5 @@ inline void OpenInExplorer(const std::string& path){
 namespace apb::gui {
 // Preview font resolution for APB font tags embedded in the executable resources.
 ImFont* ResolvePreviewFont(const char* apbFontTag, float* outPixelSize = nullptr);
+ImFont* ResolveLocalizationReferenceFont();
 }

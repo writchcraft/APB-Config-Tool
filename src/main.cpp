@@ -102,10 +102,14 @@ struct PreviewFontEntry {
 
 static std::map<std::string, PreviewFontEntry> g_previewFonts;
 static std::vector<std::vector<unsigned char>> g_previewFontBlobs;
+static ImFont* g_localizationReferenceFont = nullptr;
+static ImVector<ImWchar> g_localizationReferenceRanges;
 
 static void RegisterPreviewFonts(ImGuiIO& io){
     g_previewFonts.clear();
     g_previewFontBlobs.clear();
+    g_localizationReferenceFont = nullptr;
+    g_localizationReferenceRanges.clear();
 
     const PreviewFontSpec specs[] = {
         {IDR_FONT_HELVETICA_REGULAR, "APBMenus_Font.APB_Helvetica_Regular_11", 11.f},
@@ -144,6 +148,35 @@ static void RegisterPreviewFonts(ImGuiIO& io){
         if(font)
             g_previewFonts[spec.tag] = {font, spec.pixelSize};
     }
+
+    ImFontGlyphRangesBuilder builder;
+    builder.AddRanges(io.Fonts->GetGlyphRangesDefault());
+    builder.AddRanges(io.Fonts->GetGlyphRangesGreek());
+    builder.AddText(u8"~ • × ¡ ¢ £ ¤ ¥ ¦ § ¨ © ª « ¬ ® ¯ ° ± ² ³ ´ µ ¶ · ¸ ¹ º » ¼ ½ ¾ Α Β Χ ∆ Ε Φ Γ Η Ι Κ Λ Μ Ν Ο Π Θ Ρ Σ Τ Υ ς Ω Ξ Ψ Ζ _ α β χ δ ε φ γ η ι κ λ µ ν ο π θ ρ σ τ υ ω ξ ψ ζ { | } ↵");
+    builder.BuildRanges(&g_localizationReferenceRanges);
+
+    const char* systemFontCandidates[] = {
+        "C:\\Windows\\Fonts\\arial.ttf",
+        "C:\\Windows\\Fonts\\segoeui.ttf",
+        "C:\\Windows\\Fonts\\seguisym.ttf",
+    };
+    for(const char* fontPath : systemFontCandidates){
+        if(std::filesystem::exists(fontPath)){
+            g_localizationReferenceFont = io.Fonts->AddFontFromFileTTF(fontPath, 18.f, nullptr,
+                g_localizationReferenceRanges.Data);
+            if(g_localizationReferenceFont)
+                break;
+        }
+    }
+
+    if(!g_localizationReferenceFont){
+        if(std::vector<unsigned char>* blob = getBlob(IDR_FONT_BENTONSANS_REGULAR)){
+            ImFontConfig cfg;
+            cfg.FontDataOwnedByAtlas = false;
+            g_localizationReferenceFont = io.Fonts->AddFontFromMemoryTTF(
+                blob->data(), (int)blob->size(), 18.f, &cfg, g_localizationReferenceRanges.Data);
+        }
+    }
 }
 
 // ── Create all required Documents\APBConfigTool\ subfolders on launch ─────
@@ -166,6 +199,10 @@ ImFont* ResolvePreviewFont(const char* apbFontTag, float* outPixelSize){
 
     if(outPixelSize) *outPixelSize = it->second.pixelSize;
     return it->second.font;
+}
+
+ImFont* ResolveLocalizationReferenceFont(){
+    return g_localizationReferenceFont;
 }
 }
 

@@ -21,6 +21,7 @@ enum PageId {
     PAGE_LOCALIZATION, PAGE_ARMAS, PAGE_PLAYER_ROLES, PAGE_HEX_CONVERTER, PAGE_CREDITS,
     PAGE_RELOAD_RESUPPLY,
     PAGE_CONTACTS,
+    PAGE_PREMADE_CONFIGS,
     PAGE_SETTINGS,
     PAGE_WCOLOUR_SPECIFIC,
     PAGE_COUNT
@@ -36,6 +37,7 @@ static PageHexConverter       s_hexConverter;
 static PageCredits            s_credits;
 static PageReloadResupplyText s_reloadResupply;
 static PageContactDescription s_contacts;
+static PagePremadeConfigs     s_premadeConfigs;
 static PageSettings           s_settings;
 static int s_current = PAGE_GRADIENT;
 
@@ -45,6 +47,7 @@ static std::vector<NavGroup> s_nav = {
     { "Colour Tools", {{"Gradient Maker",PAGE_GRADIENT},{"Weapon Colour",PAGE_WCOLOUR},{"Specific Weapon Overrides",PAGE_WCOLOUR_SPECIFIC}}, true },
     { "Stats",        {{"Vehicle Stats",PAGE_VEHICLE},{"Weapon Stats",PAGE_WEAPON}}, false },
     { "Content",      {{"Player Roles",PAGE_PLAYER_ROLES},{"Reload / Resupply Text",PAGE_RELOAD_RESUPPLY},{"Contact Description",PAGE_CONTACTS}}, false },
+    { "Templates",    {{"Premade Configs",PAGE_PREMADE_CONFIGS}}, false },
     { "Reference",    {{"Localization",PAGE_LOCALIZATION},{"Hex Converter",PAGE_HEX_CONVERTER}}, false },
     { "Utilities",    {{"ARMAS Scanner",PAGE_ARMAS}}, false },
     { "Application",  {{"Settings",PAGE_SETTINGS},{"Credits",PAGE_CREDITS}}, false },
@@ -52,7 +55,7 @@ static std::vector<NavGroup> s_nav = {
 static const char* pageCategory[PAGE_COUNT] = {
     "Colour Tools","Colour Tools",
     "Stats","Stats",
-    "Reference","Utilities","Content","Reference","Application","Content","Content","Application",
+    "Reference","Utilities","Content","Reference","Application","Content","Content","Templates","Application",
     "Colour Tools"
 };
 static bool s_configLoaded = false;
@@ -358,6 +361,15 @@ static bool saveConfig(){
         out << "    \"int_path\": \"" << jsonEscape(s_contacts.intPath) << "\",\n";
         out << "    \"out_path\": \"" << jsonEscape(s_contacts.outPath) << "\",\n";
         out << "    \"mode\": " << s_contacts.modeIdx << "\n";
+        out << "  },\n";
+
+        out << "  \"premade_configs\": {\n";
+        out << "    \"template_idx\": " << s_premadeConfigs.templateIdx << ",\n";
+        out << "    \"output_dir\": \"" << jsonEscape(s_premadeConfigs.outputDir) << "\"\n";
+        out << "  },\n";
+
+        out << "  \"settings\": {\n";
+        out << "    \"premade_config_location\": \"" << jsonEscape(premadeConfigLocation()) << "\"\n";
         out << "  }\n";
         out << "}\n";
 
@@ -512,6 +524,20 @@ static void loadConfig(){
             s_contacts.modeIdx = std::clamp(jsonInt(contacts, "mode", s_contacts.modeIdx), 0, 1);
         }
 
+        if(root.contains("premade_configs") && root["premade_configs"].is_object()){
+            const json& premade = root["premade_configs"];
+            s_premadeConfigs.templateIdx = std::max(0, jsonInt(
+                premade, "template_idx", s_premadeConfigs.templateIdx));
+            copyString(s_premadeConfigs.outputDir, sizeof(s_premadeConfigs.outputDir),
+                jsonString(premade, "output_dir"));
+            s_premadeConfigs.outputSeeded = s_premadeConfigs.outputDir[0] != '\0';
+        }
+
+        if(root.contains("settings") && root["settings"].is_object()){
+            const json& settings = root["settings"];
+            setPremadeConfigLocation(jsonString(settings, "premade_config_location", premadeConfigLocation()));
+        }
+
         setConfigStatus("Config loaded.", true);
     }catch(const std::exception& e){
         setConfigStatus(std::string("Load failed: ") + e.what(), false);
@@ -534,6 +560,7 @@ static void drawPage(){
         case PAGE_CREDITS:      s_credits.draw();      break;
         case PAGE_RELOAD_RESUPPLY:s_reloadResupply.draw(); break;
         case PAGE_CONTACTS:     s_contacts.draw();     break;
+        case PAGE_PREMADE_CONFIGS:s_premadeConfigs.draw(); break;
         case PAGE_SETTINGS:     s_settings.draw();     break;
     }
 }
@@ -549,6 +576,7 @@ static bool selectedToolIsRunning(){
         case PAGE_PLAYER_ROLES:  return s_playerRoles.isActionRunning();
         case PAGE_RELOAD_RESUPPLY:return s_reloadResupply.isActionRunning();
         case PAGE_CONTACTS:      return s_contacts.isActionRunning();
+        case PAGE_PREMADE_CONFIGS:return s_premadeConfigs.isActionRunning();
         default:                 return false;
     }
 }
@@ -564,6 +592,8 @@ static bool selectedToolCanStart(){
         case PAGE_PLAYER_ROLES:  return s_playerRoles.canStartAction();
         case PAGE_RELOAD_RESUPPLY:return s_reloadResupply.canStartAction();
         case PAGE_CONTACTS:      return s_contacts.canStartAction();
+        case PAGE_PREMADE_CONFIGS:return s_premadeConfigs.canStartAction();
+        case PAGE_SETTINGS:      return true;
         default:                 return false;
     }
 }
@@ -583,6 +613,7 @@ static void startSelectedTool(){
         case PAGE_PLAYER_ROLES:  s_playerRoles.startAction(); break;
         case PAGE_RELOAD_RESUPPLY:s_reloadResupply.startAction(); break;
         case PAGE_CONTACTS:      s_contacts.startAction(); break;
+        case PAGE_PREMADE_CONFIGS:s_premadeConfigs.startAction(); break;
         default: break;
     }
 }
@@ -597,6 +628,7 @@ static void cancelSelectedTool(){
         case PAGE_ARMAS:         s_armas.cancelAction();    break;
         case PAGE_PLAYER_ROLES:  s_playerRoles.cancelAction(); break;
         case PAGE_CONTACTS:      s_contacts.cancelAction(); break;
+        case PAGE_PREMADE_CONFIGS:s_premadeConfigs.cancelAction(); break;
         default: break;
     }
 }

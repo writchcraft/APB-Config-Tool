@@ -22,6 +22,7 @@ inline std::string AppDocDir(){
 inline std::string ThemesDir()  { return AppDocDir()+"\\Themes";  }
 inline std::string PresetsDir() { return AppDocDir()+"\\Presets"; }
 inline std::string AssetsDir()  { return AppDocDir()+"\\Assets";  }
+inline std::string PremadeConfigsDir(){ return AppDocDir()+"\\PremadeConfigs"; }
 inline std::string WeaponImgDir(){ return AssetsDir()+"\\Images_WeaponItemTypes"; }
 inline std::string VehicleImgDir(){ return AssetsDir()+"\\Images_VehicleItemTypes"; }
 inline std::string DownloadsDir(){

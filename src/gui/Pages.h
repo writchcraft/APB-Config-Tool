@@ -1,6 +1,7 @@
 #pragma once
 #include "App.h"
 #include "backend/InventoryItemTypes.h"
+#include "backend/PremadeConfigs.h"
 #include "backend/Contacts.h"
 #include "backend/PlayerRoles.h"
 #include "backend/WeaponColour.h"
@@ -2385,52 +2386,339 @@ struct PageHexConverter {
 // PageLocalization
 // ══════════════════════════════════════════════════════════════════════════
 struct PageLocalization {
+    struct NamedTagRow {
+        const char* name;
+        bool approximate;
+        bool hasSample;
+        const char* note;
+        float r, g, b, a;
+        const char* codeLine1;
+        const char* codeLine2;
+    };
+
+    static constexpr const char* GENERAL_TEXT = R"(Custom localization configs personalize the game's text on your client only.
+
+Recommended workflow:
+
+1. Use a better editor than basic Notepad. Notepad++ is recommended because folder-wide search matters here.
+2. For a first config, copy the full INT folder into GER.
+3. Rename the copied files so the extension matches the destination folder.
+4. Search the copied GER folder for the exact string you want to change.
+5. Edit only the value side of each line:
+   StringID=Your text here
+6. Keep one string per line. Do not press Enter inside a value.
+7. To move text to a new line, use the APB newline character instead of a real line break.
+8. Do not break dynamic tags such as <This>. Those are placeholders pulled in by the game.
+
+Useful note:
+- APBUserInterface is one of the most common files for UI text, but it is not the only one.
+- Missing text after the '=' may fall back to the default English localization.
+- To blank out a value safely, use a whitespace character instead of leaving it empty.)";
+
+    static constexpr const char* LAUNCH_TEXT = R"(APB can be forced to load a localization with a shortcut to:
+\Binaries\APB.exe
+
+Add the language switch at the end of the shortcut target:
+-language=[num]
+
+Example:
+"D:\Steam Library\steamapps\common\APB Reloaded\Binaries\APB.exe" -language=1036
+
+Language folders and launch codes:
+INT  - International / default English
+BRA  - -language=1046
+FRA  - -language=1036
+GER  - -language=1031
+ITA  - -language=1040
+RUS  - -language=1049
+SPA  - -language=1034
+
+Important:
+- INT is the default folder and will be overwritten by game updates.
+- If a string is empty in the selected language, APB may fall back to INT.)";
+
+    static constexpr const char* SYMBOLS_TEXT = R"(Known symbols:
+~ • × ¡ ¢ £ ¤ ¥ ¦ § ¨ © ª « ¬ ® ¯ ° ± ² ³ ´ µ ¶ · ¸ ¹ º » ¼ ½ ¾
+Α Β Χ ∆ Ε Φ Γ Η Ι Κ Λ Μ Ν Ο Π Θ Ρ Σ Τ Υ ς Ω Ξ Ψ Ζ
+_ α β χ δ ε φ γ η ι κ λ µ ν ο π θ ρ σ τ υ ω ξ ψ ζ { | }
+
+Special characters:
+[↵]  Newline instruction character for in-game line breaks
+[ ]  Blank / whitespace character
+
+Notes:
+- Do not use the Enter key inside a localization value.
+- Some contexts also use the vertical bar '|' as a separator.)";
+
+    static constexpr const char* FONT_NOTES_TEXT = R"(Font rules:
+
+- Font tags can force APB to use a predefined in-game font.
+- Fonts are mostly size/style variants, not entirely different typefaces.
+- Font changes are known not to work properly on lines that use <col:...> named colour tags.
+- Font changes do work with explicit <Color:R= G= B=> tags.
+- Do not use <Fonts:/> closing tags. Leave the rest of the line in the chosen font instead.
+- EngineFonts use a different character sheet, so some symbols may not render correctly.)";
+
+    static constexpr const char* COLOUR_RULES_TEXT = R"(APB uses two colour-tag systems:
+
+Named tag:
+<col:TagName>Text</col>
+
+Explicit RGB tag:
+<Color:R=1 G=1 B=1>Text<Color:/>
+
+Termination rules:
+- <col:TagName> must be closed with </col>
+- <Color:R=... G=... B=...> must be closed with <Color:/>
+- Do not swap those closing styles
+
+The game mixes both methods depending on the file and even the individual line.
+When changing a string, keep the same tag style APB already used there.
+
+Notes:
+- Some tags listed there were measured from current.log
+- Entries marked as approximate were matched manually from screen colour picking
+- Some tags may map back to plain white or transparent output depending on usage)";
+
+    inline static constexpr NamedTagRow NAMED_TAG_ROWS[] = {
+        {"None", false, false, "This color tag actually causes the text to render transparent. No known application of this.", 0.f, 0.f, 0.f, 0.f, "", ""},
+        {"Action_Enemy", false, true, nullptr, 0.882353f, 0.f, 0.f, 1.f, "rgba(225,0,0,1)", "R=0.882353 G=0 B=0"},
+        {"Action_Enemy_Assist", false, true, nullptr, 0.364706f, 0.f, 0.f, 1.f, "rgba(93,0,0,1)", "R=0.364706 G=0 B=0"},
+        {"Action_Team", true, true, nullptr, 0.650980f, 0.992157f, 0.431373f, 1.f, "#A6FD6E", ""},
+        {"Action_Team_Assist", true, true, nullptr, 0.349020f, 0.572549f, 0.294118f, 1.f, "#59924B", ""},
+        {"Black", false, true, nullptr, 0.f, 0.f, 0.f, 1.f, "rgba(0,0,0,1)", "R=0 G=0 B=0"},
+        {"Black_Dark", false, true, nullptr, 0.011765f, 0.011765f, 0.011765f, 1.f, "#030303", "R=0.011765 G=0.011765 B=0.011765"},
+        {"Black_Light", false, true, nullptr, 0.019608f, 0.019608f, 0.019608f, 1.f, "#050505", "R=0.019608 G=0.019608 B=0.019608"},
+        {"Black_TaskMarker", false, true, nullptr, 0.419608f, 0.419608f, 0.419608f, 1.f, "rgba(107,107,107,1)", "R=0.419608 G=0.419608 B=0.419608"},
+        {"Blue", false, true, nullptr, 0.035294f, 0.470588f, 1.f, 1.f, "rgba(9,120,255,1)", "R=0.035294 G=0.470588 B=1"},
+        {"Blue_Enforcer", false, true, nullptr, 0.003922f, 0.109804f, 0.239216f, 1.f, "rgba(1,28,61,1)", "R=0.003922 G=0.109804 B=0.239216"},
+        {"Blue_Pale", false, true, nullptr, 0.666667f, 0.666667f, 1.f, 1.f, "rgba(170,170,255,1)", "R=0.666667 G=0.666667 B=1"},
+        {"Blue_TaskMarker", false, true, nullptr, 0.470588f, 1.f, 1.f, 1.f, "rgba(120,255,255,1)", "R=0.470588 G=1 B=1"},
+        {"Blue_mid", false, true, nullptr, 0.196078f, 0.415686f, 1.f, 1.f, "rgba(50,106,255,1)", "R=0.196078 G=0.415686 B=1"},
+        {"Bronze", false, true, nullptr, 0.694118f, 0.501961f, 0.101961f, 1.f, "rgba(177,128,26,1)", "R=0.694118 G=0.501961 B=0.101961"},
+        {"Ceremony_Highlight", false, true, nullptr, 1.f, 0.882353f, 0.588235f, 1.f, "rgba(255,225,150,1)", "R=1 G=0.882353 B=0.588235"},
+        {"Chat_Clan", false, true, nullptr, 0.078431f, 0.274510f, 1.f, 1.f, "rgba(20,70,255,1)", "R=0.078431 G=0.274510 B=1"},
+        {"Chat_Combat", false, true, nullptr, 1.f, 0.192157f, 0.019608f, 1.f, "rgba(255,49,5,1)", "R=1 G=0.192157 B=0.019608"},
+        {"Chat_Dev", false, true, nullptr, 0.f, 1.f, 1.f, 1.f, "rgba(0,255,255,1)", "R=0 G=1 B=1"},
+        {"Chat_District", false, true, nullptr, 0.941176f, 0.941176f, 0.941176f, 1.f, "rgba(240,240,240,1)", "R=0.941176 G=0.941176 B=0.941176"},
+        {"Chat_GM", false, true, nullptr, 1.f, 0.f, 0.f, 1.f, "rgba(255,0,0,1)", "R=1 G=0 B=0"},
+        {"Chat_Group", false, true, nullptr, 0.250980f, 0.784314f, 0.250980f, 1.f, "rgba(64,200,64,1)", "R=0.250980 G=0.784314 B=0.250980"},
+        {"Chat_Helper", false, true, nullptr, 0.f, 1.f, 0.f, 1.f, "rgba(0,255,0,1)", "R=0 G=1 B=0"},
+        {"Chat_Mission", false, true, nullptr, 0.929412f, 0.929412f, 0.f, 1.f, "rgba(237,237,0,1)", "R=0.929412 G=0.929412 B=0"},
+        {"Chat_Name", false, true, nullptr, 1.f, 0.576471f, 0.015686f, 1.f, "rgba(255,147,4,1)", "R=1 G=0.576471 B=0.015686"},
+        {"Chat_Officer", false, true, nullptr, 0.478431f, 0.478431f, 1.f, 1.f, "rgba(122,122,255,1)", "R=0.478431 G=0.478431 B=1"},
+        {"Chat_Premium", false, true, nullptr, 0.682353f, 0.568627f, 0.f, 1.f, "rgba(174,145,0,1)", "R=0.682353 G=0.568627 B=0"},
+        {"Chat_Say", false, true, nullptr, 1.f, 1.f, 1.f, 1.f, "rgba(255,255,255,1)", "R=1 G=1 B=1"},
+        {"Chat_System", false, true, nullptr, 0.682353f, 0.682353f, 0.682353f, 1.f, "rgba(174,174,174,1)", "R=0.682353 G=0.682353 B=0.682353"},
+        {"Chat_TGM", false, true, nullptr, 1.f, 0.337255f, 0.337255f, 1.f, "rgba(255,86,86,1)", "R=1 G=0.337255 B=0.337255"},
+        {"Chat_Team", false, true, nullptr, 0.188235f, 1.f, 1.f, 1.f, "rgba(48,255,255,1)", "R=0.188235 G=1 B=1"},
+        {"Chat_Tutorial", false, true, nullptr, 0.f, 0.490196f, 0.650980f, 1.f, "rgba(0,125,166,1)", "R=0 G=0.490196 B=0.650980"},
+        {"Chat_Vehicle", false, true, nullptr, 1.f, 0.192157f, 0.019608f, 1.f, "rgba(255,49,5,1)", "R=1 G=0.192157 B=0.019608"},
+        {"Chat_Whisper", false, true, nullptr, 0.933333f, 0.f, 0.933333f, 1.f, "rgba(238,0,238,1)", "R=0.933333 G=0 B=0.933333"},
+        {"Chat_Yell", false, true, nullptr, 1.f, 0.419608f, 0.317647f, 1.f, "rgba(255,107,81,1)", "R=1 G=0.419608 B=0.317647"},
+        {"Contact", false, true, nullptr, 0.400000f, 0.674510f, 0.007843f, 1.f, "rgba(102,172,2,1)", "R=0.400000 G=0.674510 B=0.007843"},
+        {"Cyan", false, true, nullptr, 0.011765f, 0.549020f, 0.784314f, 1.f, "rgba(3,140,200,1)", "R=0.011765 G=0.549020 B=0.784314"},
+        {"ED_garage", false, true, nullptr, 0.650980f, 0.f, 0.f, 1.f, "rgba(166,0,0,1)", "R=0.650980 G=0 B=0"},
+        {"ED_marketplace", false, true, nullptr, 0.f, 0.650980f, 0.f, 1.f, "rgba(0,166,0,1)", "R=0 G=0.650980 B=0"},
+        {"ED_music", false, true, nullptr, 0.650980f, 0.650980f, 0.650980f, 1.f, "rgba(166,166,166,1)", "R=0.650980 G=0.650980 B=0.650980"},
+        {"ED_persona", false, true, nullptr, 0.650980f, 0.325490f, 0.f, 1.f, "rgba(166,83,0,1)", "R=0.650980 G=0.325490 B=0"},
+        {"ED_symbol", false, true, nullptr, 0.f, 0.862745f, 0.831373f, 1.f, "rgba(0,220,212,1)", "R=0 G=0.862745 B=0.831373"},
+        {"ED_wardrobe", false, true, nullptr, 0.650980f, 0.f, 0.650980f, 1.f, "rgba(166,0,166,1)", "R=0.650980 G=0 B=0.650980"},
+        {"Green", false, true, nullptr, 0.078431f, 1.f, 0.f, 1.f, "rgba(20,255,0,1)", "R=0.078431 G=1 B=0"},
+        {"Green_Dark", false, true, nullptr, 0.098039f, 0.549020f, 0.196078f, 1.f, "rgba(25,140,50,1)", "R=0.098039 G=0.549020 B=0.196078"},
+        {"Green_Light", false, true, nullptr, 0.011765f, 1.f, 0.541176f, 1.f, "rgba(3,255,138,1)", "R=0.011765 G=1 B=0.541176"},
+        {"Green_Pale", false, true, nullptr, 0.400000f, 1.f, 0.f, 1.f, "rgba(102,255,0,1)", "R=0.400000 G=1 B=0"},
+        {"Green_TaskMarker", false, true, nullptr, 0.270588f, 1.f, 0.086275f, 1.f, "rgba(69,255,22,1)", "R=0.270588 G=1 B=0.086275"},
+        {"Grey", false, true, nullptr, 0.349020f, 0.349020f, 0.349020f, 1.f, "rgba(89,89,89,1)", "R=0.349020 G=0.349020 B=0.349020"},
+        {"Grey_Dark", false, true, nullptr, 0.035294f, 0.035294f, 0.035294f, 1.f, "rgba(9,9,9,1)", "R=0.035294 G=0.035294 B=0.035294"},
+        {"Grey_Pale", false, true, nullptr, 0.882353f, 0.882353f, 0.882353f, 1.f, "rgba(225,225,225,1)", "R=0.882353 G=0.882353 B=0.882353"},
+        {"HUDMessage_Default", true, true, nullptr, 0.984314f, 0.682353f, 0.129412f, 1.f, "#FBAE21", ""},
+        {"HUDMessage_Error", false, true, nullptr, 0.776471f, 0.f, 0.f, 1.f, "rgba(198,0,0,1)", "R=0.776471 G=0 B=0"},
+        {"HUDMessage_Mission", false, true, nullptr, 0.705882f, 0.627451f, 0.f, 1.f, "rgba(180,160,0,1)", "R=0.705882 G=0.627451 B=0"},
+        {"HUDMessage_TutorialText", false, true, nullptr, 0.776471f, 0.843137f, 0.870588f, 1.f, "rgba(198,215,222,1)", "R=0.776471 G=0.843137 B=0.870588"},
+        {"HUDMessage_VIP", false, true, nullptr, 0.188235f, 1.f, 1.f, 1.f, "rgba(48,255,255,1)", "R=0.188235 G=1 B=1"},
+        {"Mailbox", false, true, nullptr, 0.f, 0.419608f, 1.f, 1.f, "rgba(0,107,255,1)", "R=0 G=0.419608 B=1"},
+        {"Orange", false, true, nullptr, 1.f, 0.400000f, 0.f, 1.f, "rgba(255,102,0,1)", "R=1 G=0.400000 B=0"},
+        {"Orange_APB", true, true, nullptr, 0.917647f, 0.666667f, 0.098039f, 1.f, "#EAAA19", ""},
+        {"Orange_Dark", false, true, nullptr, 0.588235f, 0.117647f, 0.f, 1.f, "rgba(150,30,0,1)", "R=0.588235 G=0.117647 B=0"},
+        {"Pink", false, true, nullptr, 0.996078f, 0.164706f, 0.400000f, 1.f, "rgba(254,42,102,1)", "R=0.996078 G=0.164706 B=0.400000"},
+        {"Pink_Pale", false, true, nullptr, 0.882353f, 0.576471f, 0.662745f, 1.f, "#E193A9", "R=0.882353 G=0.576471 B=0.662745"},
+        {"Purple", false, true, nullptr, 0.596078f, 0.082353f, 0.768627f, 1.f, "rgba(152,21,196,1)", "R=0.596078 G=0.082353 B=0.768627"},
+        {"Purple_Bright", false, true, nullptr, 0.819608f, 0.082353f, 0.768627f, 1.f, "rgba(209,21,196,1)", "R=0.819608 G=0.082353 B=0.768627"},
+        {"Purple_Dark", false, true, nullptr, 0.211765f, 0.027451f, 1.f, 1.f, "rgba(54,7,255,1)", "R=0.211765 G=0.027451 B=1"},
+        {"Red", false, true, nullptr, 1.f, 0.f, 0.f, 1.f, "rgba(255,0,0,1)", "R=1 G=0 B=0"},
+        {"Red_Criminal", false, true, nullptr, 0.239216f, 0.003922f, 0.003922f, 1.f, "rgba(61,1,1,1)", "R=0.239216 G=0.003922 B=0.003922"},
+        {"Red_Dark", false, true, nullptr, 0.725490f, 0.f, 0.f, 1.f, "rgba(185,0,0,1)", "R=0.725490 G=0 B=0"},
+        {"Red_Pale", false, true, nullptr, 0.313725f, 0.f, 0.f, 1.f, "rgba(80,0,0,1)", "R=0.313725 G=0 B=0"},
+        {"Red_mid", false, true, nullptr, 1.f, 0.215686f, 0.117647f, 1.f, "rgba(255,55,30,1)", "R=1 G=0.215686 B=0.117647"},
+        {"ScoreBreakdown_Cash", false, true, nullptr, 0.984314f, 0.721569f, 0.015686f, 1.f, "rgba(251,184,4,1)", "R=0.984314 G=0.721569 B=0.015686"},
+        {"ScoreBreakdown_NormalValue", false, true, nullptr, 0.007843f, 0.560784f, 0.866667f, 1.f, "rgba(2,143,221,1)", "R=0.007843 G=0.560784 B=0.866667"},
+        {"Scoreboard_LocalPlayer", false, true, nullptr, 1.f, 0.800000f, 0.f, 1.f, "rgba(255,204,0,1)", "R=1 G=0.800000 B=0"},
+        {"Scoreboard_Opponents", false, true, nullptr, 0.776471f, 0.f, 0.f, 1.f, "rgba(198,0,0,1)", "R=0.776471 G=0 B=0"},
+        {"Tutorial_KeyPress", false, true, nullptr, 1.f, 0.400000f, 0.f, 1.f, "rgba(255,102,0,1)", "R=1 G=0.400000 B=0"},
+        {"Valentine_Pink", false, true, nullptr, 1.f, 0.517647f, 0.862745f, 1.f, "rgba(255,132,220,1)", "R=1 G=0.517647 B=0.862745"},
+        {"White", false, true, nullptr, 1.f, 1.f, 1.f, 1.f, "rgba(255,255,255,1)", "R=1 G=1 B=1"},
+        {"Yellow", false, true, nullptr, 1.f, 0.674510f, 0.f, 1.f, "rgba(255,172,0,1)", "R=1 G=0.674510 B=0"},
+        {"Yellow_Bright", false, true, nullptr, 1.f, 0.388235f, 0.058824f, 1.f, "rgba(255,99,15,1)", "R=1 G=0.388235 B=0.058824"},
+        {"Yellow_CSA", false, true, nullptr, 1.f, 0.098039f, 0.f, 1.f, "rgba(255,25,0,1)", "R=1 G=0.098039 B=0"},
+        {"Yellow_Pale", false, true, nullptr, 1.f, 1.f, 0.725490f, 1.f, "rgba(255,255,185,1)", "R=1 G=1 B=0.725490"},
+        {"Yellow_TaskMarker", false, true, nullptr, 1.f, 0.760784f, 0.047059f, 0.882353f, "rgba(255,194,12,225)", "R=1 G=0.760784 B=0.047059"},
+    };
+
+    static ImU32 tagColor(const NamedTagRow& row){
+        return IM_COL32(
+            std::clamp((int)std::lround(row.r * 255.f), 0, 255),
+            std::clamp((int)std::lround(row.g * 255.f), 0, 255),
+            std::clamp((int)std::lround(row.b * 255.f), 0, 255),
+            std::clamp((int)std::lround(row.a * 255.f), 0, 255));
+    }
+
+    static void drawTagSample(const NamedTagRow& row){
+        if(!row.hasSample){
+            ImGui::PushStyleColor(ImGuiCol_Text, Col::SUBTEXT);
+            ImGui::TextWrapped("%s", row.note ? row.note : "");
+            ImGui::PopStyleColor();
+            return;
+        }
+
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const ImVec2 start = ImGui::GetCursorScreenPos();
+        const float blockW = 15.f;
+        const float blockH = 18.f;
+        const float gap = 6.f;
+        const ImU32 col = tagColor(row);
+        dl->AddRectFilled(start, {start.x + blockW * 4.f, start.y + blockH}, col);
+
+        ImGui::Dummy({blockW * 4.f, blockH});
+        ImGui::SameLine(0.f, gap);
+        ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(col),
+            "The quick brown fox jumps over the lazy dog.");
+    }
+
+    static void drawTagCode(const NamedTagRow& row){
+        if(row.codeLine1 && row.codeLine1[0])
+            ImGui::TextUnformatted(row.codeLine1);
+        if(row.codeLine2 && row.codeLine2[0]){
+            const std::string code = row.codeLine2;
+            const size_t rPos = code.find("R=");
+            const size_t gPos = code.find(" G=");
+            const size_t bPos = code.find(" B=");
+            const std::string rVal = (rPos != std::string::npos && gPos != std::string::npos)
+                ? code.substr(rPos + 2, gPos - (rPos + 2)) : "";
+            const std::string gVal = (gPos != std::string::npos && bPos != std::string::npos)
+                ? code.substr(gPos + 3, bPos - (gPos + 3)) : "";
+            const std::string bVal = (bPos != std::string::npos)
+                ? code.substr(bPos + 3) : "";
+
+            ImGui::TextColored(ImVec4(1.f, 0.2f, 0.2f, 1.f), "R=");
+            ImGui::SameLine(0.f, 0.f);
+            ImGui::TextUnformatted(rVal.c_str());
+            ImGui::SameLine(0.f, 0.f);
+            ImGui::TextColored(ImVec4(0.2f, 0.85f, 0.2f, 1.f), " G=");
+            ImGui::SameLine(0.f, 0.f);
+            ImGui::TextUnformatted(gVal.c_str());
+            ImGui::SameLine(0.f, 0.f);
+            ImGui::TextColored(ImVec4(0.2f, 0.4f, 1.f, 1.f), " B=");
+            ImGui::SameLine(0.f, 0.f);
+            ImGui::TextUnformatted(bVal.c_str());
+        }
+    }
+
+    static void drawNamedTagsTable(){
+        if(!ImGui::BeginTable("##locnamedtagstable", 4,
+            ImGuiTableFlags_RowBg |
+            ImGuiTableFlags_BordersInnerV |
+            ImGuiTableFlags_ScrollY |
+            ImGuiTableFlags_SizingStretchProp,
+            {-1.f, -1.f}))
+            return;
+
+        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, 210.f);
+        ImGui::TableSetupColumn("~", ImGuiTableColumnFlags_WidthFixed, 36.f);
+        ImGui::TableSetupColumn("Sample/Notes", ImGuiTableColumnFlags_WidthStretch, 1.2f);
+        ImGui::TableSetupColumn("Code", ImGuiTableColumnFlags_WidthFixed, 270.f);
+        ImGui::TableHeadersRow();
+
+        for(const auto& row : NAMED_TAG_ROWS){
+            ImGui::TableNextRow();
+
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted(row.name);
+
+            ImGui::TableSetColumnIndex(1);
+            ImGui::AlignTextToFramePadding();
+            if(row.approximate)
+                ImGui::TextColored(Col::SUBTEXT, "~");
+
+            ImGui::TableSetColumnIndex(2);
+            drawTagSample(row);
+
+            ImGui::TableSetColumnIndex(3);
+            drawTagCode(row);
+        }
+
+        ImGui::EndTable();
+    }
+
     void draw(){
+        static const char* fonts[] = {
+            "<Fonts:APBMenus_Font.APB_Helvetica_Bold_11>",
+            "<Fonts:APBMenus_Font.APB_Helvetica_Bold_13>",
+            "<Fonts:APBMenus_Font.APB_Helvetica_Bold_14>",
+            "<Fonts:APBMenus_Font.APB_Helvetica_Bold_24>",
+            "<Fonts:APBMenus_Font.APB_Helvetica_Bold_32>",
+            "<Fonts:APBMenus_Font.APB_Helvetica_Regular_11>",
+            "<Fonts:APBMenus_Font.APB_Helvetica_Regular_12>",
+            "<Fonts:APBMenus_Font.APB_Helvetica_Regular_14>",
+            "<Fonts:APBMenus_Font.APB_Helvetica_Regular_16>",
+            "<Fonts:APBMenus_Font.APB_Helvetica_Regular_28>",
+            "<Fonts:APBMenus_Font.APB_HUD_AmmoCounter>",
+            "<Fonts:EngineFonts.TinyFont>",
+            "<Fonts:EngineFonts.SmallFont>",
+            "<Fonts:EngineFonts.MediumFont>",
+            "<Fonts:EngineFonts.LargeFont>",
+        };
+
         ImGui::BeginChild("##loc",{0,0},false);
         SectionLabel("Localization Reference");
-        SectionNote("Reference snippets are grouped by purpose so the common APB formatting tags stay close to the examples you need.");
+        SectionNote("Setup, launch arguments, symbols, fonts, and colour-tag behaviour are grouped here for quick editing reference.");
         if(ImGui::BeginTabBar("##loctabs")){
+            if(ImGui::BeginTabItem("General")){
+                SubLabel("Workflow");
+                ReadOnlyLogBox("##locgeneral", GENERAL_TEXT, {-1.f, -1.f});
+                ImGui::EndTabItem();
+            }
+            if(ImGui::BeginTabItem("Launch")){
+                SubLabel("Language Override");
+                ReadOnlyLogBox("##loclaunch", LAUNCH_TEXT, {-1.f, -1.f});
+                ImGui::EndTabItem();
+            }
             if(ImGui::BeginTabItem("Symbols")){
-                SubLabel("Inline Characters");
-                ImGui::TextWrapped("APB Inline Characters\n\n"
-                    "\xe2\x86\xb5 (U+21B5)  Line break inside a localization value.\n"
-                    "             Renders as a newline in-game.\n\n"
-                    "&  Ampersand literal.\n"
-                    "|  Vertical bar; separates tooltip sections in some contexts.");
+                SubLabel("Special Characters");
+                if(ImFont* refFont = ResolveLocalizationReferenceFont())
+                    ImGui::PushFont(refFont);
+                ReadOnlyLogBox("##locsymbols", SYMBOLS_TEXT, {-1.f, -1.f});
+                if(ResolveLocalizationReferenceFont())
+                    ImGui::PopFont();
                 ImGui::EndTabItem();
             }
             if(ImGui::BeginTabItem("Fonts")){
-                SubLabel("Font Tags");
-                ImGui::TextWrapped("APB Font Tags — wrap text to change in-game appearance:");
+                SubLabel("Known Font Tags");
+                ReadOnlyLogBox("##locfontnotes", FONT_NOTES_TEXT, {-1.f, 130.f});
                 ImGui::Spacing();
-                static const char* fonts[]={
-                    "<Fonts:APBMenus_Font.APB_Helvetica_Regular_11>",
-                    "<Fonts:APBMenus_Font.APB_Helvetica_Regular_12>",
-                    "<Fonts:APBMenus_Font.APB_Helvetica_Regular_14>",
-                    "<Fonts:APBMenus_Font.APB_Helvetica_Regular_16>",
-                    "<Fonts:APBMenus_Font.APB_Helvetica_Bold_11>",
-                    "<Fonts:APBMenus_Font.APB_Helvetica_Bold_13>",
-                    "<Fonts:APBMenus_Font.APB_Helvetica_Bold_14>",
-                    "<Fonts:APBMenus_Font.APB_Helvetica_Bold_24>",
-                    "<Fonts:EngineFonts.TinyFont>",
-                    "<Fonts:EngineFonts.SmallFont>",
-                    "<Fonts:EngineFonts.MediumFont>",
-                    "<Fonts:EngineFonts.LargeFont>",
-                };
                 for(auto f:fonts){ if(ImGui::Selectable(f)) ImGui::SetClipboardText(f); }
-                ImGui::TextColored(Col::SUBTEXT,"(click to copy)");
+                ImGui::TextColored(Col::SUBTEXT,"Click any font tag to copy it.");
                 ImGui::EndTabItem();
             }
-            if(ImGui::BeginTabItem("Colour Codes")){
-                SubLabel("Named and RGB Colours");
-                ImGui::TextWrapped(
-                    "Named colour:\n"
-                    "  <col:TagName>Text</col>\n\n"
-                    "Float RGB colour:\n"
-                    "  <Color:R=1.000 G=0.000 B=0.000>Text<Color:/>\n\n"
-                    "Values are normalised floats (0.0-1.0).\n\n"
-                    "Common named colours: White, Black, Red, Green, Blue,\n"
-                    "Yellow, Orange, Purple, Cyan, Grey");
+            if(ImGui::BeginTabItem("Tag Rules")){
+                SubLabel("Colour Syntax");
+                ReadOnlyLogBox("##loccolourrules", COLOUR_RULES_TEXT, {-1.f, -1.f});
+                ImGui::EndTabItem();
+            }
+            if(ImGui::BeginTabItem("Named Tags")){
+                SubLabel("Measured Colour Tags");
+                drawNamedTagsTable();
                 ImGui::EndTabItem();
             }
             ImGui::EndTabBar();
@@ -2466,7 +2754,24 @@ struct PageCredits {
 // PageSettings
 // ══════════════════════════════════════════════════════════════════════════
 struct PageSettings {
+    char premadeConfigDir[MAX_PATH * 2] = {};
+    bool premadeConfigDirSeeded = false;
+
+    void syncPremadeConfigDir(){
+        if(premadeConfigDirSeeded) return;
+        std::snprintf(premadeConfigDir, sizeof(premadeConfigDir), "%s", premadeConfigLocation().c_str());
+        premadeConfigDirSeeded = true;
+    }
+
+    void applyPremadeConfigDir(){
+        setPremadeConfigLocation(premadeConfigDir);
+        refreshPremadeConfigSummaries();
+        std::snprintf(premadeConfigDir, sizeof(premadeConfigDir), "%s", premadeConfigLocation().c_str());
+    }
+
     void draw(){
+        syncPremadeConfigDir();
+
         ImGui::BeginChild("##settings",{0,0},false);
         SectionLabel("Settings");
         SectionNote("Shared application resources live here so the generator pages can stay focused on output configuration.");
@@ -2487,6 +2792,244 @@ struct PageSettings {
         ImGui::SameLine();
         if(ImGui::Button("Open Themes Folder", {140.f, 0.f}))
             OpenInExplorer(themesDir);
+
+        SectionLabel("Premade Configs");
+        SectionNote("Templates are scanned from this folder at runtime. Each immediate subfolder is treated as one premade config.");
+
+        const std::string defaultPremadeDir = PremadeConfigsDir();
+        std::filesystem::create_directories(defaultPremadeDir);
+
+        ImGui::Text("Folder:");
+        ImGui::SetNextItemWidth(-220.f);
+        if(ImGui::InputText("##premadeConfigLocation", premadeConfigDir, sizeof(premadeConfigDir),
+            ImGuiInputTextFlags_AutoSelectAll) && !ImGui::IsItemActive()){
+            applyPremadeConfigDir();
+        }
+        if(ImGui::IsItemDeactivatedAfterEdit())
+            applyPremadeConfigDir();
+        ImGui::SameLine();
+        if(ImGui::Button("Browse##premadeConfigLocation", {70.f, 0.f})){
+            std::string picked;
+            if(BrowseFolder(picked, "Select premade config folder")){
+                std::snprintf(premadeConfigDir, sizeof(premadeConfigDir), "%s", picked.c_str());
+                applyPremadeConfigDir();
+            }
+        }
+        ImGui::SameLine();
+        if(ImGui::Button("Open##premadeConfigLocation", {60.f, 0.f}))
+            OpenInExplorer(premadeConfigLocation());
+
+        ImGui::Spacing();
+        if(ImGui::Button("Use Default Premade Folder", {180.f, 0.f})){
+            std::snprintf(premadeConfigDir, sizeof(premadeConfigDir), "%s", defaultPremadeDir.c_str());
+            applyPremadeConfigDir();
+        }
+        ImGui::SameLine();
+        if(ImGui::Button("Refresh Premade Scan", {150.f, 0.f}))
+            applyPremadeConfigDir();
+
+        const auto& summaries = premadeConfigSummaries();
+        int totalFiles = 0;
+        for(const auto& summary : summaries)
+            totalFiles += summary.fileCount;
+        ImGui::TextColored(Col::SUBTEXT, "Resolved folder: %s", premadeConfigLocation().c_str());
+        ImGui::TextColored(Col::SUBTEXT, "Detected %d templates across %d files.", (int)summaries.size(), totalFiles);
+
+        ImGui::EndChild();
+    }
+};
+
+// ══════════════════════════════════════════════════════════════════════════
+// PagePremadeConfigs
+// ══════════════════════════════════════════════════════════════════════════
+struct PagePremadeConfigs {
+    int templateIdx = 0;
+    char outputDir[MAX_PATH] = {};
+    ThreadLog log;
+    std::atomic<bool> running{false};
+    std::atomic<bool> cancelRequested{false};
+    std::string lastOutputDir;
+    bool outputSeeded = false;
+
+    bool isActionRunning() const { return running.load(); }
+
+    bool canStartAction() const {
+        const auto& summaries = premadeConfigSummaries();
+        return !running.load()
+            && templateIdx >= 0
+            && templateIdx < (int)summaries.size()
+            && outputDir[0] != '\0';
+    }
+
+    void cancelAction(){
+        if(!running.load()) return;
+        cancelRequested = true;
+        log.append("Cancelling premade config export...");
+    }
+
+    void seedDefaultOutput(){
+        if(outputSeeded && outputDir[0] != '\0') return;
+        const std::string preferred = DownloadsDir() + "\\APB Premade Localization";
+        std::snprintf(outputDir, sizeof(outputDir), "%s", preferred.c_str());
+        outputSeeded = true;
+    }
+
+    std::string resolvedOutputPreview() const {
+        if(!outputDir[0]) return {};
+        std::filesystem::path out(outputDir);
+        out /= "APBCT_YYYYMMDD_HHMMSS";
+        return out.string();
+    }
+
+    void startAction(){
+        if(!canStartAction()) return;
+
+        const auto& summaries = premadeConfigSummaries();
+        const std::string templateName = summaries[(size_t)templateIdx].name;
+        const std::string outputRoot = outputDir;
+
+        cancelRequested = false;
+        log.clear();
+        log.append("Starting premade config export...");
+        running = true;
+
+        std::thread([this, templateName, outputRoot](){
+            try{
+                PremadeConfigExportOptions options;
+                options.templateName = templateName;
+                options.outputDir = outputRoot;
+
+                PremadeConfigExportResult result;
+                exportPremadeConfig(options, result,
+                    [this](const std::string& line){ log.append(line); },
+                    &cancelRequested);
+
+                if(result.cancelled){
+                    log.append("Premade config export cancelled.");
+                } else {
+                    lastOutputDir = result.outputDir;
+                    std::ostringstream msg;
+                    msg << "Exported " << result.filesWritten << " files.";
+                    log.append(msg.str());
+                }
+            }catch(const std::exception& e){
+                log.append(std::string("Error: ") + e.what());
+            }
+            running = false;
+        }).detach();
+    }
+
+    void draw(){
+        seedDefaultOutput();
+
+        const auto& summaries = premadeConfigSummaries();
+        if(!summaries.empty())
+            templateIdx = std::clamp(templateIdx, 0, (int)summaries.size() - 1);
+        else
+            templateIdx = 0;
+
+        ImGui::BeginChild("##premadeconfigs", {0, 0}, false);
+        SectionLabel("Premade Configs");
+        SectionNote("Inspect one of the scanned full-config templates, see which colour values are already editable inside it, and export it into a timestamped folder.");
+
+        SectionLabel("Template");
+        if(BeginSectionTable("##premadetemplate", 124.f, 110.f)){
+            BeginSectionRow("Config");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            const char* preview = summaries.empty() ? "No scanned templates" : summaries[(size_t)templateIdx].name.c_str();
+            if(ImGui::BeginCombo("##premadecombo", preview)){
+                for(int i = 0; i < (int)summaries.size(); ++i){
+                    const bool selected = templateIdx == i;
+                    if(ImGui::Selectable(summaries[(size_t)i].name.c_str(), selected))
+                        templateIdx = i;
+                    if(selected) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+
+            BeginSectionRow("Summary");
+            if(summaries.empty()){
+                ImGui::TextColored(Col::RED, "No premade configs found in the configured premade folder.");
+            } else {
+                const auto& summary = summaries[(size_t)templateIdx];
+                ImGui::Text("%d files", summary.fileCount);
+                ImGui::SameLine();
+                ImGui::TextColored(Col::SUBTEXT, "| %d tagged files | %d colour tags (%d named, %d RGB)",
+                    summary.recolourableFiles, summary.colourTagCount,
+                    summary.namedColourTagCount, summary.rgbColourTagCount);
+            }
+            EndSectionTable();
+        }
+
+        if(!summaries.empty()){
+            const auto& summary = summaries[(size_t)templateIdx];
+
+            SectionLabel("Detected Template Edits");
+            if(summary.editableValues.empty()){
+                SectionNote("No APB colour tags were detected in this scanned template.");
+            } else {
+                SectionNote("Named tags can be templated as <col:{color}>. RGB tags can be templated as <Color:R={r} G={g} B={b}>.");
+
+                ImGui::TextColored(Col::SUBTEXT, "Editable colour values");
+                ImGui::BeginChild("##premadeeditablevalues", ImVec2(0, 150), true);
+                for(const auto& value : summary.editableValues){
+                    ImGui::Text("%s", value.value.c_str());
+                    ImGui::SameLine();
+                    ImGui::TextColored(Col::SUBTEXT, "[%s | %d hits | %d files]",
+                        value.kind.c_str(), value.occurrences, value.fileCount);
+                    ImGui::TextColored(Col::SUBTEXT, "Template form: %s", value.replacementHint.c_str());
+                    ImGui::Spacing();
+                }
+                ImGui::EndChild();
+
+                ImGui::Spacing();
+                ImGui::TextColored(Col::SUBTEXT, "Tagged files");
+                ImGui::BeginChild("##premadeeditablefiles", ImVec2(0, 120), true);
+                for(const auto& file : summary.editableFiles){
+                    ImGui::Text("%s", file.relativePath.c_str());
+                    ImGui::SameLine();
+                    ImGui::TextColored(Col::SUBTEXT, "[%d named | %d RGB]",
+                        file.namedColourTags, file.rgbColourTags);
+                }
+                ImGui::EndChild();
+            }
+        }
+
+        SectionLabel("Output");
+        if(BeginSectionTable("##premadeoutput", 124.f, 110.f)){
+            BeginSectionRow("Folder");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputText("##premadeoutdir", outputDir, sizeof(outputDir));
+            NextSectionAction();
+            if(ImGui::Button("Browse##premadeout")){
+                std::string s;
+                if(BrowseFolder(s, "Select export folder"))
+                    std::snprintf(outputDir, sizeof(outputDir), "%s", s.c_str());
+            }
+
+            BeginSectionRow("Helpers");
+            if(ImGui::Button("Use Downloads##premadedl")){
+                const std::string downloadDir = DownloadsDir() + "\\APB Premade Localization";
+                std::snprintf(outputDir, sizeof(outputDir), "%s", downloadDir.c_str());
+            }
+            ImGui::SameLine();
+            if(ImGui::Button("Open##premadeoutopen") && outputDir[0])
+                OpenInExplorer(outputDir);
+            EndSectionTable();
+        }
+        ImGui::TextColored(Col::SUBTEXT, "Source folder: %s", premadeConfigLocation().c_str());
+        ImGui::TextColored(Col::SUBTEXT, "Export folder: %s", resolvedOutputPreview().empty() ? "(not set)" : resolvedOutputPreview().c_str());
+        ImGui::TextColored(Col::SUBTEXT, "Each export creates a new APBCT timestamp folder under the selected root.");
+
+        SectionLabel("Log");
+        const std::string logText = log.get();
+        ReadOnlyLogBox("##premadelog", logText, {-1.f, -1.f});
+
+        if(!lastOutputDir.empty()){
+            ImGui::Spacing();
+            if(ImGui::Button("Open Last Export##premadelast"))
+                OpenInExplorer(lastOutputDir);
+        }
 
         ImGui::EndChild();
     }
