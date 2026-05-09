@@ -1631,7 +1631,13 @@ struct PageReloadResupplyText {
             BeginSectionRow("");
             ImGui::Dummy({0.f, 0.f});
             NextSectionAction();
-            if(ImGui::Button("Save##rrsave")) saveCurrentSection();
+            ImGui::PushStyleColor(ImGuiCol_Button,        Col::BTN_OK);
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Col::YELLOW_DIM);
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::YELLOW_DIM);
+            ImGui::PushStyleColor(ImGuiCol_Text,          {0.04f,0.04f,0.04f,1.f});
+            ImGui::PushStyleColor(ImGuiCol_Border,        Col::YELLOW_DIM);
+            if(ImGui::Button("Save##rrsave", {86.f, 32.f})) saveCurrentSection();
+            ImGui::PopStyleColor(5);
             EndSectionTable();
         }
         drawPreview(state, fallbackText);
