@@ -435,6 +435,7 @@ struct PageGradientMaker {
 
         ImGui::BeginChild("##gm",{0,0},false);
         SectionLabel("Gradient Maker");
+        SectionNote("Build stepped, smooth, or triple gradients and keep reusable theme presets grouped with each generator mode.");
 
         // ── Refresh button ────────────────────────────────────────────────
         ImGui::SameLine(ImGui::GetContentRegionAvail().x - 80.f);
@@ -455,7 +456,7 @@ struct PageGradientMaker {
             if(ImGui::BeginTabItem("Stepped")){
                 activeTab = ActiveTab::Stepped;
 
-                // Theme dropdown
+                SectionLabel("Theme");
                 drawThemeControls("##themeNameH", "##themeH", "Save Theme##h",
                     themeIdxHard, nThemes, names,
                     [&](int idx){ applyThemeHard(lib.themes[idx]); },
@@ -467,8 +468,8 @@ struct PageGradientMaker {
                     ShellExecuteA(nullptr,"explore",dir.c_str(),nullptr,nullptr,SW_SHOWNORMAL);
                 }
 
-                ImGui::Spacing();
-                ImGui::Text("Colours (%d):", hardColCount);
+                SectionLabel("Colours");
+                ImGui::Text("Palette (%d):", hardColCount);
                 for(int i = 0; i < hardColCount; ++i){
                     char id[16]; snprintf(id,sizeof(id),"##hc%d",i);
                     if(ColorPickerButton(id, hardCols[i])){
@@ -477,18 +478,14 @@ struct PageGradientMaker {
                     if(i < hardColCount-1) ImGui::SameLine();
                 }
 
-                ImGui::Spacing();
-                ImGui::Text("Input text:");
+                SectionLabel("Input");
                 ImGui::InputTextMultiline("##hinput",hardInput,sizeof(hardInput),{-1,80});
-                ImGui::Spacing();
                 if(RunButton("Generate##h")) generateStepped();
                 ImGui::SameLine();
                 if(ImGui::Button("Copy##h",{80,28})) ImGui::SetClipboardText(hardOutput);
 
-                ImGui::Spacing();
-                ImGui::Text("Output:");
-                ImGui::InputTextMultiline("##hout",hardOutput,sizeof(hardOutput),
-                    {-1,120},ImGuiInputTextFlags_ReadOnly);
+                SectionLabel("Output");
+                ReadOnlyLogBox("##hout", hardOutput, {-1.f, 120.f});
                 ImGui::EndTabItem();
             }
 
@@ -498,6 +495,7 @@ struct PageGradientMaker {
             if(ImGui::BeginTabItem("Smooth (2-colour)")){
                 activeTab = ActiveTab::Smooth;
 
+                SectionLabel("Theme");
                 drawThemeControls("##themeNameS", "##themeS", "Save Theme##s",
                     themeIdxSmooth, nThemes, names,
                     [&](int idx){ applyThemeSmooth(lib.themes[idx]); },
@@ -508,31 +506,28 @@ struct PageGradientMaker {
                     ShellExecuteA(nullptr,"explore",dir.c_str(),nullptr,nullptr,SW_SHOWNORMAL);
                 }
 
-                ImGui::Spacing();
+                SectionLabel("Colours");
                 ImGui::Text("Start:"); ImGui::SameLine();
                 if(ColorPickerButton("##ss", smoothStart)) themeIdxSmooth = CUSTOM;
                 ImGui::SameLine();
                 ImGui::Text("End:"); ImGui::SameLine();
                 if(ColorPickerButton("##se", smoothEnd))   themeIdxSmooth = CUSTOM;
 
-                ImGui::Spacing();
-                ImGui::Text("Input text:");
+                SectionLabel("Input");
                 ImGui::InputTextMultiline("##sinput",smoothInput,sizeof(smoothInput),{-1,80});
-                ImGui::Spacing();
                 if(RunButton("Generate##s")) generateSmooth();
                 ImGui::SameLine();
                 if(ImGui::Button("Copy##s",{80,28})) ImGui::SetClipboardText(smoothOutput);
 
-                ImGui::Spacing();
-                ImGui::Text("Output:");
-                ImGui::InputTextMultiline("##sout",smoothOutput,sizeof(smoothOutput),
-                    {-1,120},ImGuiInputTextFlags_ReadOnly);
+                SectionLabel("Output");
+                ReadOnlyLogBox("##sout", smoothOutput, {-1.f, 120.f});
                 ImGui::EndTabItem();
             }
 
             if(ImGui::BeginTabItem("Triple Gradient")){
                 activeTab = ActiveTab::Triple;
 
+                SectionLabel("Theme");
                 drawThemeControls("##themeNameT", "##themeT", "Save Theme##t",
                     themeIdxTriple, nThemes, names,
                     [&](int idx){ applyThemeTriple(lib.themes[idx]); },
@@ -543,7 +538,7 @@ struct PageGradientMaker {
                     ShellExecuteA(nullptr,"explore",dir.c_str(),nullptr,nullptr,SW_SHOWNORMAL);
                 }
 
-                ImGui::Spacing();
+                SectionLabel("Colours");
                 ImGui::Text("Colour 1:"); ImGui::SameLine();
                 if(ColorPickerButton("##ts", tripleStart)) themeIdxTriple = CUSTOM;
                 ImGui::SameLine();
@@ -553,18 +548,14 @@ struct PageGradientMaker {
                 ImGui::Text("Colour 3:"); ImGui::SameLine();
                 if(ColorPickerButton("##te", tripleEnd)) themeIdxTriple = CUSTOM;
 
-                ImGui::Spacing();
-                ImGui::Text("Input text:");
+                SectionLabel("Input");
                 ImGui::InputTextMultiline("##tinput",tripleInput,sizeof(tripleInput),{-1,80});
-                ImGui::Spacing();
                 if(RunButton("Generate##t")) generateTriple();
                 ImGui::SameLine();
                 if(ImGui::Button("Copy##t",{80,28})) ImGui::SetClipboardText(tripleOutput);
 
-                ImGui::Spacing();
-                ImGui::Text("Output:");
-                ImGui::InputTextMultiline("##tout",tripleOutput,sizeof(tripleOutput),
-                    {-1,120},ImGuiInputTextFlags_ReadOnly);
+                SectionLabel("Output");
+                ReadOnlyLogBox("##tout", tripleOutput, {-1.f, 120.f});
                 ImGui::EndTabItem();
             }
 

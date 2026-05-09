@@ -194,6 +194,57 @@ inline void SubLabel(const char* label){
     ImGui::PopStyleColor();
 }
 
+inline void SectionNote(const char* text){
+    ImGui::PushStyleColor(ImGuiCol_Text, Col::SUBTEXT);
+    ImGui::TextWrapped("%s", text);
+    ImGui::PopStyleColor();
+}
+
+inline bool BeginSectionTable(const char* id, float labelWidth = 140.f, float actionWidth = 88.f){
+    if(!ImGui::BeginTable(id, 3, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings))
+        return false;
+    ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_WidthFixed, labelWidth);
+    ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+    ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed, actionWidth);
+    return true;
+}
+
+inline void BeginSectionRow(const char* label){
+    ImGui::TableNextRow();
+    ImGui::TableSetColumnIndex(0);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(label);
+    ImGui::TableSetColumnIndex(1);
+}
+
+inline void NextSectionAction(){
+    ImGui::TableSetColumnIndex(2);
+}
+
+inline void EndSectionTable(){
+    ImGui::EndTable();
+}
+
+inline void ReadOnlyLogBox(const char* id, const std::string& text, ImVec2 size = {-1.f, 0.f}){
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, Col::ITEM_BG);
+    ImGui::InputTextMultiline(id, const_cast<char*>(text.c_str()), text.size() + 1, size,
+        ImGuiInputTextFlags_ReadOnly);
+    ImGui::PopStyleColor();
+}
+
+inline void ReadOnlyLogBox(const char* id, char* text, ImVec2 size = {-1.f, 0.f}){
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, Col::ITEM_BG);
+    ImGui::InputTextMultiline(id, text, std::strlen(text) + 1, size, ImGuiInputTextFlags_ReadOnly);
+    ImGui::PopStyleColor();
+}
+
+inline void ReadOnlyLogBox(const char* id, const char* text, ImVec2 size = {-1.f, 0.f}){
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, Col::ITEM_BG);
+    ImGui::InputTextMultiline(id, const_cast<char*>(text), std::strlen(text) + 1, size,
+        ImGuiInputTextFlags_ReadOnly);
+    ImGui::PopStyleColor();
+}
+
 // Colour swatch button that opens a picker popup
 inline bool ColorPickerButton(const char* id, float col[3], float w=28.f, float h=22.f){
     ImVec4 c={col[0],col[1],col[2],1.f};

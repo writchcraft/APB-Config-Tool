@@ -273,84 +273,97 @@ struct ColourSchemeWidget {
             presetThemeIdx = -1;
         }
 
-        SectionLabel("Colour Settings");
+        SectionNote("Choose a manual style or load a preset theme for the stat overlay.");
 
-        // ── Scheme selector ───────────────────────────────────────────
-        ImGui::Text("Style:"); ImGui::SameLine();
-        ImGui::SetNextItemWidth(220.f);
-        char cid[32]; snprintf(cid,sizeof(cid),"##sc%s",uid);
-        if(ImGui::BeginCombo(cid, currentStyleLabel(lib))){
-            for(int i=0;i<BASE_COUNT;++i){
-                if(ImGui::Selectable(BASE_SCHEMES[i], schemeIdx==i)){
-                    schemeIdx=i;
+        char tid[32]; snprintf(tid, sizeof(tid), "##cst%s", uid);
+        if(BeginSectionTable(tid, 116.f, 184.f)){
+            BeginSectionRow("Style");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            char cid[32]; snprintf(cid,sizeof(cid),"##sc%s",uid);
+            if(ImGui::BeginCombo(cid, currentStyleLabel(lib))){
+                for(int i=0;i<BASE_COUNT;++i){
+                    if(ImGui::Selectable(BASE_SCHEMES[i], schemeIdx==i)){
+                        schemeIdx=i;
+                        presetEquipped=false;
+                        presetThemeIdx=-1;
+                        changed=true;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+
+            BeginSectionRow("Preset");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            char pid[32]; snprintf(pid,sizeof(pid),"##pr%s",uid);
+            std::string previewName = (presetEquipped && presetThemeIdx>=0 && presetThemeIdx<lib.count())
+                ? lib.themes[presetThemeIdx].name
+                : "-- select --";
+            if(ImGui::BeginCombo(pid, previewName.c_str())){
+                for(int i=0;i<lib.count();++i){
+                    bool sel = (presetEquipped && presetThemeIdx==i);
+                    if(ImGui::Selectable(lib.themes[i].name.c_str(), sel)){
+                        applyPresetTheme(i);
+                        changed = true;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            NextSectionAction();
+            char rbid[32]; snprintf(rbid,sizeof(rbid),"Reload##pr%s",uid);
+            if(ImGui::SmallButton(rbid)){
+                lib.reload();
+                if(presetEquipped && (presetThemeIdx<0 || presetThemeIdx>=lib.count())){
                     presetEquipped=false;
                     presetThemeIdx=-1;
                     changed=true;
                 }
             }
-            ImGui::EndCombo();
-        }
+            ImGui::SameLine();
+            char opfbid[40]; snprintf(opfbid,sizeof(opfbid),"Open Folder##pr%s",uid);
+            if(ImGui::SmallButton(opfbid)) OpenInExplorer(ThemeLibrary::themesDir());
 
-        ImGui::Text("Preset:"); ImGui::SameLine();
-        ImGui::SetNextItemWidth(220.f);
-        char pid[32]; snprintf(pid,sizeof(pid),"##pr%s",uid);
-        std::string previewName = (presetEquipped && presetThemeIdx>=0 && presetThemeIdx<lib.count())
-            ? lib.themes[presetThemeIdx].name
-            : "-- select --";
-        if(ImGui::BeginCombo(pid, previewName.c_str())){
-            for(int i=0;i<lib.count();++i){
-                bool sel = (presetEquipped && presetThemeIdx==i);
-                if(ImGui::Selectable(lib.themes[i].name.c_str(), sel)){
-                    applyPresetTheme(i);
-                    changed = true;
-                }
+            if(!presetEquipped && schemeIdx==2){
+                BeginSectionRow("Single Colour");
+                char singleId[32]; snprintf(singleId,sizeof(singleId),"##sing%s",uid);
+                if(ColorPickerButton(singleId, singleCol)) changed=true;
             }
-            ImGui::EndCombo();
-        }
-        ImGui::SameLine();
-        char rbid[32]; snprintf(rbid,sizeof(rbid),"Reload##pr%s",uid);
-        if(ImGui::SmallButton(rbid)){
-            lib.reload();
-            if(presetEquipped && (presetThemeIdx<0 || presetThemeIdx>=lib.count())){
-                presetEquipped=false;
-                presetThemeIdx=-1;
-                changed=true;
+            if(!presetEquipped && schemeIdx==3){
+                BeginSectionRow("Gradient");
+                char p1[32],p2[32];
+                snprintf(p1,sizeof(p1),"##gs%s",uid);
+                snprintf(p2,sizeof(p2),"##ge%s",uid);
+                if(ColorPickerButton(p1,gradStart)) changed=true;
+                ImGui::SameLine();
+                ImGui::TextUnformatted("Start");
+                ImGui::SameLine();
+                if(ColorPickerButton(p2,gradEnd)) changed=true;
+                ImGui::SameLine();
+                ImGui::TextUnformatted("End");
             }
-        }
-        ImGui::SameLine();
-        char opfbid[40]; snprintf(opfbid,sizeof(opfbid),"Open Preset Folder##pr%s",uid);
-        if(ImGui::SmallButton(opfbid)) OpenInExplorer(ThemeLibrary::themesDir());
+            if(!presetEquipped && schemeIdx==4){
+                BeginSectionRow("Triple");
+                char p1[32],pm[32],p2[32];
+                snprintf(p1,sizeof(p1),"##gts%s",uid);
+                snprintf(pm,sizeof(pm),"##gtm%s",uid);
+                snprintf(p2,sizeof(p2),"##gte%s",uid);
+                if(ColorPickerButton(p1,gradStart)) changed=true;
+                ImGui::SameLine();
+                ImGui::TextUnformatted("1");
+                ImGui::SameLine();
+                if(ColorPickerButton(pm,tripleMid)) changed=true;
+                ImGui::SameLine();
+                ImGui::TextUnformatted("2");
+                ImGui::SameLine();
+                if(ColorPickerButton(p2,gradEnd)) changed=true;
+                ImGui::SameLine();
+                ImGui::TextUnformatted("3");
+            }
 
-        // ── Colour pickers (only for Single/manual Gradient) ──────────
-        if(!presetEquipped && schemeIdx==2){
-            ImGui::SameLine(); ImGui::Text("Colour:"); ImGui::SameLine();
-            char pid[32]; snprintf(pid,sizeof(pid),"##sing%s",uid);
-            if(ColorPickerButton(pid,singleCol)) changed=true;
+            BeginSectionRow("Actions");
+            char defbid[32]; snprintf(defbid,sizeof(defbid),"Defaults##df%s",uid);
+            if(ImGui::Button(defbid)){ resetDefaults(); changed=true; }
+            EndSectionTable();
         }
-        if(!presetEquipped && schemeIdx==3){
-            ImGui::SameLine(); ImGui::Text("Start:"); ImGui::SameLine();
-            char p1[32],p2[32];
-            snprintf(p1,sizeof(p1),"##gs%s",uid); snprintf(p2,sizeof(p2),"##ge%s",uid);
-            if(ColorPickerButton(p1,gradStart)) changed=true;
-            ImGui::SameLine(); ImGui::Text("End:"); ImGui::SameLine();
-            if(ColorPickerButton(p2,gradEnd)) changed=true;
-        }
-        if(!presetEquipped && schemeIdx==4){
-            ImGui::SameLine(); ImGui::Text("Start:"); ImGui::SameLine();
-            char p1[32],pm[32],p2[32];
-            snprintf(p1,sizeof(p1),"##gts%s",uid);
-            snprintf(pm,sizeof(pm),"##gtm%s",uid);
-            snprintf(p2,sizeof(p2),"##gte%s",uid);
-            if(ColorPickerButton(p1,gradStart)) changed=true;
-            ImGui::SameLine(); ImGui::Text("Middle:"); ImGui::SameLine();
-            if(ColorPickerButton(pm,tripleMid)) changed=true;
-            ImGui::SameLine(); ImGui::Text("End:"); ImGui::SameLine();
-            if(ColorPickerButton(p2,gradEnd)) changed=true;
-        }
-
-        ImGui::Spacing();
-        char defbid[32]; snprintf(defbid,sizeof(defbid),"Defaults##df%s",uid);
-        if(ImGui::Button(defbid)){ resetDefaults(); changed=true; }
     }
 
     // Returns the Scheme enum and RGBs for use with the backend
@@ -381,12 +394,13 @@ struct PageInventoryItemTypes {
     void draw(){
         ImGui::BeginChild("##iit",{0,0},false);
         SectionLabel("InventoryItemTypes – Merge GER \xe2\x86\x90 INT");
+        SectionNote("Merge translated entries into a target file and review the generated report below.");
 
         auto row=[&](const char* label,char* buf,const char* id,const char* filter,bool isSave=false){
-            ImGui::Text("%s",label); ImGui::SameLine();
-            ImGui::SetNextItemWidth(-80);
+            BeginSectionRow(label);
+            ImGui::SetNextItemWidth(-FLT_MIN);
             ImGui::InputText(id,buf,MAX_PATH);
-            ImGui::SameLine();
+            NextSectionAction();
             char bid[32]; snprintf(bid,sizeof(bid),"Browse##%s",id);
             if(ImGui::Button(bid)){
                 std::string s;
@@ -395,11 +409,16 @@ struct PageInventoryItemTypes {
                 if(!s.empty()) strncpy(buf,s.c_str(),MAX_PATH-1);
             }
         };
-        row("GER File:    ",gerPath,"##iitger","All Files\0*.*\0");
-        row("INT File:    ",intPath,"##iitint","All Files\0*.*\0");
-        row("Output:      ",outPath,"##iitout","Text Files\0*.txt\0",true);
 
-        ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
+        SectionLabel("Files");
+        if(BeginSectionTable("##iitfiles", 116.f, 86.f)){
+            row("GER File", gerPath, "##iitger", "All Files\0*.*\0");
+            row("INT File", intPath, "##iitint", "All Files\0*.*\0");
+            row("Output", outPath, "##iitout", "Text Files\0*.txt\0", true);
+            EndSectionTable();
+        }
+
+        SectionLabel("Run");
         bool busy=running.load();
         if(busy) ImGui::BeginDisabled();
         if(RunButton("Run##iit")){
@@ -421,9 +440,10 @@ struct PageInventoryItemTypes {
         ImGui::SameLine();
         if(!lastOut.empty()&&ImGui::Button("Open Output",{110,32})) OpenInExplorer(lastOut);
         if(busy){ ImGui::SameLine(); ImGui::TextColored(Col::YELLOW,"Running..."); }
-        ImGui::Spacing();
+
+        SectionLabel("Log");
         std::string t=log.get();
-        ImGui::InputTextMultiline("##iitlog",(char*)t.c_str(),t.size()+1,{-1,-1},ImGuiInputTextFlags_ReadOnly);
+        ReadOnlyLogBox("##iitlog", t, {-1.f, -1.f});
         ImGui::EndChild();
     }
 };
@@ -627,71 +647,84 @@ struct PagePlayerRoles {
         ensureDefaultIntPath();
         ImGui::BeginChild("##proles", {0, 0}, false);
         SectionLabel("Player Roles – generate organized PlayerRoles output from APB.DB");
+        SectionNote("Build a fresh PlayerRoles output file with consistent colour formatting and optional short equipment names.");
 
-        ImGui::Text("INT File:"); ImGui::SameLine();
-        ImGui::SetNextItemWidth(-80);
-        ImGui::InputText("##prolesint", intPath, MAX_PATH);
-        ImGui::SameLine();
-        if(ImGui::Button("Browse##prolesint")){
-            std::string s;
-            if(BrowseFile(s, "INT Files\0*.int;*.INT\0\0")) strncpy(intPath, s.c_str(), MAX_PATH - 1);
-        }
+        SectionLabel("Files");
+        if(BeginSectionTable("##prolesfiles", 124.f, 86.f)){
+            BeginSectionRow("INT File");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputText("##prolesint", intPath, MAX_PATH);
+            NextSectionAction();
+            if(ImGui::Button("Browse##prolesint")){
+                std::string s;
+                if(BrowseFile(s, "INT Files\0*.int;*.INT\0\0")) strncpy(intPath, s.c_str(), MAX_PATH - 1);
+            }
 
-        ImGui::Text("Output Location:"); ImGui::SameLine();
-        ImGui::SetNextItemWidth(-80);
-        ImGui::InputText("##prolesout", outPath, MAX_PATH);
-        ImGui::SameLine();
-        if(ImGui::Button("Browse##prolesout")){
-            std::string s;
-            if(BrowseSaveFile(s, "INT Files\0*.int\0GER Files\0*.ger\0Text Files\0*.txt\0\0", "int"))
-                strncpy(outPath, s.c_str(), MAX_PATH - 1);
+            BeginSectionRow("Output Location");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputText("##prolesout", outPath, MAX_PATH);
+            NextSectionAction();
+            if(ImGui::Button("Browse##prolesout")){
+                std::string s;
+                if(BrowseSaveFile(s, "INT Files\0*.int\0GER Files\0*.ger\0Text Files\0*.txt\0\0", "int"))
+                    strncpy(outPath, s.c_str(), MAX_PATH - 1);
+            }
+            EndSectionTable();
         }
-        ImGui::TextColored(Col::SUBTEXT, "Leave blank to create a new file in Downloads.");
+        SectionNote("Leave Output Location blank to create a new file in Downloads.");
 
         static constexpr const char* STYLE_LABELS[] = {
             "No Colour", "Solid", "Stepped", "Smooth", "Triple Gradient"
         };
-        ImGui::Text("Role Name Style:"); ImGui::SameLine();
-        ImGui::SetNextItemWidth(180.f);
-        if(ImGui::BeginCombo("##prolesstyle", STYLE_LABELS[(nameStyleIdx >= 0 && nameStyleIdx < 5) ? nameStyleIdx : 1])){
-            for(int i = 0; i < 5; ++i){
-                const bool selected = (nameStyleIdx == i);
-                if(ImGui::Selectable(STYLE_LABELS[i], selected)) nameStyleIdx = i;
-                if(selected) ImGui::SetItemDefaultFocus();
+        SectionLabel("Formatting");
+        if(BeginSectionTable("##prolesformat", 124.f, 86.f)){
+            BeginSectionRow("Role Name Style");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if(ImGui::BeginCombo("##prolesstyle", STYLE_LABELS[(nameStyleIdx >= 0 && nameStyleIdx < 5) ? nameStyleIdx : 1])){
+                for(int i = 0; i < 5; ++i){
+                    const bool selected = (nameStyleIdx == i);
+                    if(ImGui::Selectable(STYLE_LABELS[i], selected)) nameStyleIdx = i;
+                    if(selected) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
             }
-            ImGui::EndCombo();
+
+            if(nameStyleIdx == 1){
+                BeginSectionRow("Colour");
+                ColorPickerButton("##prolessolid", solidCol);
+            } else if(nameStyleIdx == 2 || nameStyleIdx == 3){
+                BeginSectionRow("Gradient");
+                ColorPickerButton("##prolesstart", gradStart);
+                ImGui::SameLine();
+                ImGui::TextUnformatted("Start");
+                ImGui::SameLine();
+                ColorPickerButton("##prolesend", gradEnd);
+                ImGui::SameLine();
+                ImGui::TextUnformatted("End");
+            } else if(nameStyleIdx == 4){
+                BeginSectionRow("Triple Gradient");
+                ColorPickerButton("##prolestri_start", gradStart);
+                ImGui::SameLine();
+                ImGui::TextUnformatted("1");
+                ImGui::SameLine();
+                ColorPickerButton("##prolestri_mid", gradMiddle);
+                ImGui::SameLine();
+                ImGui::TextUnformatted("2");
+                ImGui::SameLine();
+                ColorPickerButton("##prolestri_end", gradEnd);
+                ImGui::SameLine();
+                ImGui::TextUnformatted("3");
+            }
+
+            BeginSectionRow("Equipment Names");
+            ImGui::Checkbox("Use short equipment names", &useShortEquipmentNames);
+            EndSectionTable();
         }
 
-        if(nameStyleIdx == 1){
-            ImGui::SameLine();
-            ImGui::Text("Colour:"); ImGui::SameLine();
-            ColorPickerButton("##prolessolid", solidCol);
-        } else if(nameStyleIdx == 2 || nameStyleIdx == 3){
-            ImGui::SameLine();
-            ImGui::Text("Start:"); ImGui::SameLine();
-            ColorPickerButton("##prolesstart", gradStart);
-            ImGui::SameLine();
-            ImGui::Text("End:"); ImGui::SameLine();
-            ColorPickerButton("##prolesend", gradEnd);
-        } else if(nameStyleIdx == 4){
-            ImGui::SameLine();
-            ImGui::Text("Start:"); ImGui::SameLine();
-            ColorPickerButton("##prolestri_start", gradStart);
-            ImGui::SameLine();
-            ImGui::Text("Middle:"); ImGui::SameLine();
-            ColorPickerButton("##prolestri_mid", gradMiddle);
-            ImGui::SameLine();
-            ImGui::Text("End:"); ImGui::SameLine();
-            ColorPickerButton("##prolestri_end", gradEnd);
-        }
-
-        ImGui::Checkbox("Use short equipment names", &useShortEquipmentNames);
-
-        ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
+        SectionLabel("Progress");
         ImGui::ProgressBar(prog.frac(), {-1, 18});
         ImGui::TextColored(Col::SUBTEXT, "%d / %d  %s",
             prog.done.load(), prog.total.load(), prog.lbl().c_str());
-        ImGui::Spacing();
 
         const bool busy = running.load();
         if(!busy){
@@ -708,8 +741,9 @@ struct PagePlayerRoles {
         if(!lastOut.empty() && ImGui::Button("Open Output", {110, 32}))
             OpenInExplorer(lastOut);
 
-        ImGui::Spacing();
         drawPreviewGallery();
+        SectionLabel("Log");
+        ReadOnlyLogBox("##proleslog", log.get(), {-1.f, 120.f});
         ImGui::EndChild();
     }
 };
@@ -792,45 +826,53 @@ struct PageContactDescription {
         ensureDefaultIntPath();
         ImGui::BeginChild("##contactsdesc", {0, 0}, false);
         SectionLabel("Contact Description – generate Contacts descriptions from APB.DB");
+        SectionNote("Generate contact unlock or mission descriptions directly from APB.DB-backed source files.");
 
-        ImGui::Text("Source File:"); ImGui::SameLine();
-        ImGui::SetNextItemWidth(-80);
-        ImGui::InputText("##contactsint", intPath, MAX_PATH);
-        ImGui::SameLine();
-        if(ImGui::Button("Browse##contactsint")){
-            std::string s;
-            if(BrowseFile(s, "Localization Files\0*.int;*.INT;*.ger;*.GER\0\0"))
-                strncpy(intPath, s.c_str(), MAX_PATH - 1);
-        }
+        SectionLabel("Files");
+        if(BeginSectionTable("##contactsfiles", 124.f, 86.f)){
+            BeginSectionRow("Source File");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputText("##contactsint", intPath, MAX_PATH);
+            NextSectionAction();
+            if(ImGui::Button("Browse##contactsint")){
+                std::string s;
+                if(BrowseFile(s, "Localization Files\0*.int;*.INT;*.ger;*.GER\0\0"))
+                    strncpy(intPath, s.c_str(), MAX_PATH - 1);
+            }
 
-        ImGui::Text("Output Location:"); ImGui::SameLine();
-        ImGui::SetNextItemWidth(-80);
-        ImGui::InputText("##contactsout", outPath, MAX_PATH);
-        ImGui::SameLine();
-        if(ImGui::Button("Browse##contactsout")){
-            std::string s;
-            if(BrowseSaveFile(s, "INT Files\0*.int\0GER Files\0*.ger\0Text Files\0*.txt\0\0", "int"))
-                strncpy(outPath, s.c_str(), MAX_PATH - 1);
+            BeginSectionRow("Output Location");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputText("##contactsout", outPath, MAX_PATH);
+            NextSectionAction();
+            if(ImGui::Button("Browse##contactsout")){
+                std::string s;
+                if(BrowseSaveFile(s, "INT Files\0*.int\0GER Files\0*.ger\0Text Files\0*.txt\0\0", "int"))
+                    strncpy(outPath, s.c_str(), MAX_PATH - 1);
+            }
+            EndSectionTable();
         }
-        ImGui::TextColored(Col::SUBTEXT, "Leave blank to create a new file in Downloads.");
+        SectionNote("Leave Output Location blank to create a new file in Downloads.");
 
         static constexpr const char* MODE_LABELS[] = {"UNLOCKS", "MISSIONS"};
-        ImGui::Text("Mode:"); ImGui::SameLine();
-        ImGui::SetNextItemWidth(180.f);
-        if(ImGui::BeginCombo("##contactsmode", MODE_LABELS[(modeIdx >= 0 && modeIdx < 2) ? modeIdx : 0])){
-            for(int i = 0; i < 2; ++i){
-                const bool selected = (modeIdx == i);
-                if(ImGui::Selectable(MODE_LABELS[i], selected)) modeIdx = i;
-                if(selected) ImGui::SetItemDefaultFocus();
+        SectionLabel("Options");
+        if(BeginSectionTable("##contactsmodegrid", 124.f, 86.f)){
+            BeginSectionRow("Mode");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if(ImGui::BeginCombo("##contactsmode", MODE_LABELS[(modeIdx >= 0 && modeIdx < 2) ? modeIdx : 0])){
+                for(int i = 0; i < 2; ++i){
+                    const bool selected = (modeIdx == i);
+                    if(ImGui::Selectable(MODE_LABELS[i], selected)) modeIdx = i;
+                    if(selected) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
             }
-            ImGui::EndCombo();
+            EndSectionTable();
         }
 
-        ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
+        SectionLabel("Progress");
         ImGui::ProgressBar(prog.frac(), {-1, 18});
         ImGui::TextColored(Col::SUBTEXT, "%d / %d  %s",
             prog.done.load(), prog.total.load(), prog.lbl().c_str());
-        ImGui::Spacing();
 
         const bool busy = running.load();
         if(!busy){
@@ -847,10 +889,9 @@ struct PageContactDescription {
         if(!lastOut.empty() && ImGui::Button("Open Output", {110, 32}))
             OpenInExplorer(lastOut);
 
-        ImGui::Spacing();
+        SectionLabel("Log");
         std::string t = log.get();
-        ImGui::InputTextMultiline("##contactslog", (char*)t.c_str(), t.size() + 1, {-1, -1},
-            ImGuiInputTextFlags_ReadOnly);
+        ReadOnlyLogBox("##contactslog", t, {-1.f, -1.f});
         ImGui::EndChild();
     }
 };
@@ -967,33 +1008,47 @@ struct PageWeaponItemTypes {
         ensureDefaultIntPath();
         ImGui::BeginChild("##wit",{0,0},false);
         SectionLabel("WeaponItemTypes – Stat Generation");
+        SectionNote("Generate formatted weapon descriptions from an ItemTypes INT file and preview the selected stat style before writing output.");
 
-        // File inputs
-        ImGui::Text("INT File:"); ImGui::SameLine();
-        ImGui::SetNextItemWidth(-80); ImGui::InputText("##witint",intPath,MAX_PATH);
-        ImGui::SameLine();
-        if(ImGui::Button("Browse##wit")){ std::string s;if(BrowseFile(s,"INT Files\0*.int;*.INT\0\0"))strncpy(intPath,s.c_str(),MAX_PATH-1);}
+        SectionLabel("Files");
+        if(BeginSectionTable("##witfiles", 116.f, 86.f)){
+            BeginSectionRow("INT File");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputText("##witint",intPath,MAX_PATH);
+            NextSectionAction();
+            if(ImGui::Button("Browse##wit")){
+                std::string s;
+                if(BrowseFile(s,"INT Files\0*.int;*.INT\0\0")) strncpy(intPath,s.c_str(),MAX_PATH-1);
+            }
 
-        ImGui::Text("Output Folder:"); ImGui::SameLine();
-        ImGui::SetNextItemWidth(-80); ImGui::InputText("##witout",outPath,MAX_PATH);
-        ImGui::SameLine();
-        if(ImGui::Button("Browse##witout")){ std::string s; if(BrowseFolder(s,"Select output folder")) strncpy(outPath,s.c_str(),MAX_PATH-1); }
+            BeginSectionRow("Output Folder");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputText("##witout",outPath,MAX_PATH);
+            NextSectionAction();
+            if(ImGui::Button("Browse##witout")){
+                std::string s;
+                if(BrowseFolder(s,"Select output folder")) strncpy(outPath,s.c_str(),MAX_PATH-1);
+            }
+            EndSectionTable();
+        }
+        SectionNote("Leave Output Folder blank to write the generated file to Downloads.");
 
-        ImGui::Text("Workers: "); ImGui::SameLine();
-        ImGui::SetNextItemWidth(80); ImGui::InputInt("##witwk",&workers); workers=std::max(1,std::min(64,workers));
+        SectionLabel("Generation");
+        if(BeginSectionTable("##witgen", 116.f, 86.f)){
+            BeginSectionRow("Workers");
+            ImGui::SetNextItemWidth(100.f);
+            ImGui::InputInt("##witwk",&workers);
+            workers=std::max(1,std::min(64,workers));
+            EndSectionTable();
+        }
 
-        ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
-
-        // Colour settings
+        SectionLabel("Appearance");
         bool colChanged=false;
         colours.draw("wit",colChanged);
 
-        ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
-
-        // Progress
+        SectionLabel("Progress");
         ImGui::ProgressBar(prog.frac(),{-1,18});
         ImGui::TextColored(Col::SUBTEXT,"%d / %d  %s",prog.done.load(),prog.total.load(),prog.lbl().c_str());
-        ImGui::Spacing();
 
         bool busy=running.load();
         if(busy) ImGui::BeginDisabled();
@@ -1065,7 +1120,8 @@ struct PageWeaponItemTypes {
 
         ImGui::Spacing();
         std::string t=log.get();
-        ImGui::InputTextMultiline("##witlog",(char*)t.c_str(),t.size()+1,{-1,100},ImGuiInputTextFlags_ReadOnly);
+        SectionLabel("Log");
+        ReadOnlyLogBox("##witlog", t, {-1.f, 100.f});
         ImGui::EndChild();
     }
 };
@@ -1181,30 +1237,47 @@ struct PageVehicleItemTypes {
         ensureDefaultIntPath();
         ImGui::BeginChild("##vit",{0,0},false);
         SectionLabel("VehicleItemTypes – Stat Generation");
+        SectionNote("Generate formatted vehicle descriptions from an ItemTypes INT file and preview the selected stat style before writing output.");
 
-        ImGui::Text("INT File:"); ImGui::SameLine();
-        ImGui::SetNextItemWidth(-80); ImGui::InputText("##vitint",intPath,MAX_PATH);
-        ImGui::SameLine();
-        if(ImGui::Button("Browse##vit")){ std::string s;if(BrowseFile(s,"INT Files\0*.int;*.INT\0\0"))strncpy(intPath,s.c_str(),MAX_PATH-1);}
+        SectionLabel("Files");
+        if(BeginSectionTable("##vitfiles", 116.f, 86.f)){
+            BeginSectionRow("INT File");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputText("##vitint",intPath,MAX_PATH);
+            NextSectionAction();
+            if(ImGui::Button("Browse##vit")){
+                std::string s;
+                if(BrowseFile(s,"INT Files\0*.int;*.INT\0\0"))strncpy(intPath,s.c_str(),MAX_PATH-1);
+            }
 
-        ImGui::Text("Output Folder:"); ImGui::SameLine();
-        ImGui::SetNextItemWidth(-80); ImGui::InputText("##vitout",outPath,MAX_PATH);
-        ImGui::SameLine();
-        if(ImGui::Button("Browse##vitout")){ std::string s; if(BrowseFolder(s,"Select output folder")) strncpy(outPath,s.c_str(),MAX_PATH-1); }
+            BeginSectionRow("Output Folder");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputText("##vitout",outPath,MAX_PATH);
+            NextSectionAction();
+            if(ImGui::Button("Browse##vitout")){
+                std::string s;
+                if(BrowseFolder(s,"Select output folder")) strncpy(outPath,s.c_str(),MAX_PATH-1);
+            }
+            EndSectionTable();
+        }
+        SectionNote("Leave Output Folder blank to write the generated file to Downloads.");
 
-        ImGui::Text("Workers: "); ImGui::SameLine();
-        ImGui::SetNextItemWidth(80); ImGui::InputInt("##vitwk",&workers); workers=std::max(1,std::min(64,workers));
+        SectionLabel("Generation");
+        if(BeginSectionTable("##vitgen", 116.f, 86.f)){
+            BeginSectionRow("Workers");
+            ImGui::SetNextItemWidth(100.f);
+            ImGui::InputInt("##vitwk",&workers);
+            workers=std::max(1,std::min(64,workers));
+            EndSectionTable();
+        }
 
-        ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
-
+        SectionLabel("Appearance");
         bool colChanged=false;
         colours.draw("vit",colChanged);
 
-        ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
-
+        SectionLabel("Progress");
         ImGui::ProgressBar(prog.frac(),{-1,18});
         ImGui::TextColored(Col::SUBTEXT,"%d / %d  %s",prog.done.load(),prog.total.load(),prog.lbl().c_str());
-        ImGui::Spacing();
 
         bool busy=running.load();
         if(busy) ImGui::BeginDisabled();
@@ -1276,7 +1349,8 @@ struct PageVehicleItemTypes {
 
         ImGui::Spacing();
         std::string t=log.get();
-        ImGui::InputTextMultiline("##vitlog",(char*)t.c_str(),t.size()+1,{-1,100},ImGuiInputTextFlags_ReadOnly);
+        SectionLabel("Log");
+        ReadOnlyLogBox("##vitlog", t, {-1.f, 100.f});
         ImGui::EndChild();
     }
 };
@@ -1331,20 +1405,37 @@ struct PageArmasScrape {
     void draw(){
         ImGui::BeginChild("##as",{0,0},false);
         SectionLabel("ARMAS Product ID Scanner");
-        ImGui::Text("ID Range:"); ImGui::SameLine();
-        ImGui::SetNextItemWidth(90); ImGui::InputInt("##asst",&startId);
-        ImGui::SameLine(); ImGui::Text("\xe2\x86\x92"); ImGui::SameLine();
-        ImGui::SetNextItemWidth(90); ImGui::InputInt("##asen",&endId);
-        ImGui::Text("Threads: "); ImGui::SameLine();
-        ImGui::SetNextItemWidth(90); ImGui::InputInt("##asth",&threads); threads=std::max(1,std::min(128,threads));
-        ImGui::Text("Output:  "); ImGui::SameLine();
-        ImGui::SetNextItemWidth(-80); ImGui::InputText("##asop",outPath,MAX_PATH);
-        ImGui::SameLine();
-        if(ImGui::Button("Browse##as")){ std::string s;if(BrowseSaveFile(s,"Text Files\0*.txt\0\0","txt"))strncpy(outPath,s.c_str(),MAX_PATH-1);}
-        ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
+        SectionNote("Scan a product ID range and capture any matching marketplace entries to a report file.");
+
+        SectionLabel("Scan Setup");
+        if(BeginSectionTable("##assetup", 116.f, 86.f)){
+            BeginSectionRow("Start ID");
+            ImGui::SetNextItemWidth(120.f);
+            ImGui::InputInt("##asst",&startId);
+
+            BeginSectionRow("End ID");
+            ImGui::SetNextItemWidth(120.f);
+            ImGui::InputInt("##asen",&endId);
+
+            BeginSectionRow("Threads");
+            ImGui::SetNextItemWidth(120.f);
+            ImGui::InputInt("##asth",&threads);
+            threads=std::max(1,std::min(128,threads));
+
+            BeginSectionRow("Output");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputText("##asop",outPath,MAX_PATH);
+            NextSectionAction();
+            if(ImGui::Button("Browse##as")){
+                std::string s;
+                if(BrowseSaveFile(s,"Text Files\0*.txt\0\0","txt"))strncpy(outPath,s.c_str(),MAX_PATH-1);
+            }
+            EndSectionTable();
+        }
+
+        SectionLabel("Progress");
         ImGui::ProgressBar(prog.frac(),{-1,18});
         ImGui::TextColored(Col::SUBTEXT,"%d / %d  %s",prog.done.load(),prog.total.load(),prog.lbl().c_str());
-        ImGui::Spacing();
         bool busy=running.load();
         if(!busy){
             if(RunButton("Start##as")) startAction();
@@ -1354,7 +1445,7 @@ struct PageArmasScrape {
             ImGui::PopStyleColor();
             ImGui::SameLine(); ImGui::TextColored(Col::YELLOW,"Scanning...");
         }
-        ImGui::Spacing();
+        SectionLabel("Results");
         ImGui::TextColored(Col::SUBTEXT,"Hits: %d",(int)hits.size());
         ImGui::Spacing();
         if(ImGui::BeginTable("##ashits",3,ImGuiTableFlags_Borders|ImGuiTableFlags_ScrollY|ImGuiTableFlags_RowBg,{0,0})){
@@ -1438,55 +1529,57 @@ struct PageHexConverter {
     void draw(){
         ImGui::BeginChild("##hexconv",{0,0},false);
         SectionLabel("Hex Converter");
-        ImGui::TextWrapped("Enter RGB numbers below, or paste an APB colour tag into the APB Tag field and the first R/G/B value set will be detected automatically.");
-        ImGui::Spacing();
-
-        ImGui::TextUnformatted("<Color:R={number} G={number} B={number}>");
-        ImGui::Spacing();
+        SectionNote("Enter RGB values directly or paste an APB colour tag to convert between tag and hex formats.");
 
         bool rgbEdited = false;
-        ImGui::Text("R:"); ImGui::SameLine();
-        ImGui::SetNextItemWidth(110.f);
-        rgbEdited |= ImGui::InputFloat("##hexr", &rgb[0], 0.f, 0.f, "%.6f");
-        ImGui::SameLine();
-        ImGui::Text("G:"); ImGui::SameLine();
-        ImGui::SetNextItemWidth(110.f);
-        rgbEdited |= ImGui::InputFloat("##hexg", &rgb[1], 0.f, 0.f, "%.6f");
-        ImGui::SameLine();
-        ImGui::Text("B:"); ImGui::SameLine();
-        ImGui::SetNextItemWidth(110.f);
-        rgbEdited |= ImGui::InputFloat("##hexb", &rgb[2], 0.f, 0.f, "%.6f");
+        SectionLabel("RGB Input");
+        if(BeginSectionTable("##hexrgb", 80.f, 72.f)){
+            BeginSectionRow("Red");
+            ImGui::SetNextItemWidth(120.f);
+            rgbEdited |= ImGui::InputFloat("##hexr", &rgb[0], 0.f, 0.f, "%.6f");
+
+            BeginSectionRow("Green");
+            ImGui::SetNextItemWidth(120.f);
+            rgbEdited |= ImGui::InputFloat("##hexg", &rgb[1], 0.f, 0.f, "%.6f");
+
+            BeginSectionRow("Blue");
+            ImGui::SetNextItemWidth(120.f);
+            rgbEdited |= ImGui::InputFloat("##hexb", &rgb[2], 0.f, 0.f, "%.6f");
+            EndSectionTable();
+        }
         if(rgbEdited) updateTagFromRgb();
 
-        ImGui::Spacing();
-        ImGui::Text("APB Tag:");
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(-70.f);
-        if(ImGui::InputText("##hextagpreview", apbTag, sizeof(apbTag))){
-            float parsed[3];
-            if(firstTag(apbTag, parsed)){
-                rgb[0] = parsed[0];
-                rgb[1] = parsed[1];
-                rgb[2] = parsed[2];
-                updateTagFromRgb();
+        SectionLabel("APB Tag");
+        SectionNote("<Color:R={number} G={number} B={number}>");
+        if(BeginSectionTable("##hextaggrid", 80.f, 72.f)){
+            BeginSectionRow("Tag");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if(ImGui::InputText("##hextagpreview", apbTag, sizeof(apbTag))){
+                float parsed[3];
+                if(firstTag(apbTag, parsed)){
+                    rgb[0] = parsed[0];
+                    rgb[1] = parsed[1];
+                    rgb[2] = parsed[2];
+                    updateTagFromRgb();
+                }
             }
+            NextSectionAction();
+            if(ImGui::Button("Copy##hextag"))
+                ImGui::SetClipboardText(apbTag);
+            EndSectionTable();
         }
-        ImGui::SameLine();
-        if(ImGui::Button("Copy##hextag"))
-            ImGui::SetClipboardText(apbTag);
 
         output = toHex(rgb[0], rgb[1], rgb[2]);
 
-        ImGui::Spacing();
-        ImGui::Text("Hex Code:");
-        ImGui::SameLine();
-        if(ImGui::Button("Copy##hexconv"))
-            ImGui::SetClipboardText(output.c_str());
-
-        ImGui::PushStyleColor(ImGuiCol_FrameBg, Col::ITEM_BG);
-        ImGui::InputTextMultiline("##hexout", output.data(), output.size() + 1, {-1.f, 52.f}, ImGuiInputTextFlags_ReadOnly);
-        ImGui::PopStyleColor();
-
+        SectionLabel("Hex Output");
+        if(BeginSectionTable("##hexoutgrid", 80.f, 72.f)){
+            BeginSectionRow("Hex");
+            ReadOnlyLogBox("##hexout", output, {-1.f, 52.f});
+            NextSectionAction();
+            if(ImGui::Button("Copy##hexconv"))
+                ImGui::SetClipboardText(output.c_str());
+            EndSectionTable();
+        }
         ImGui::TextColored(Col::SUBTEXT, "Values from 0-1 are normalized RGB; values above 1 are treated as 0-255 RGB.");
         ImGui::EndChild();
     }
@@ -1499,8 +1592,10 @@ struct PageLocalization {
     void draw(){
         ImGui::BeginChild("##loc",{0,0},false);
         SectionLabel("Localization Reference");
+        SectionNote("Reference snippets are grouped by purpose so the common APB formatting tags stay close to the examples you need.");
         if(ImGui::BeginTabBar("##loctabs")){
             if(ImGui::BeginTabItem("Symbols")){
+                SubLabel("Inline Characters");
                 ImGui::TextWrapped("APB Inline Characters\n\n"
                     "\xe2\x86\xb5 (U+21B5)  Line break inside a localization value.\n"
                     "             Renders as a newline in-game.\n\n"
@@ -1509,6 +1604,7 @@ struct PageLocalization {
                 ImGui::EndTabItem();
             }
             if(ImGui::BeginTabItem("Fonts")){
+                SubLabel("Font Tags");
                 ImGui::TextWrapped("APB Font Tags — wrap text to change in-game appearance:");
                 ImGui::Spacing();
                 static const char* fonts[]={
@@ -1530,6 +1626,7 @@ struct PageLocalization {
                 ImGui::EndTabItem();
             }
             if(ImGui::BeginTabItem("Colour Codes")){
+                SubLabel("Named and RGB Colours");
                 ImGui::TextWrapped(
                     "Named colour:\n"
                     "  <col:TagName>Text</col>\n\n"
@@ -1553,16 +1650,15 @@ struct PageCredits {
     void draw(){
         ImGui::BeginChild("##cred",{0,0},false);
         SectionLabel("Credits");
-        ImGui::Spacing();
+        SectionLabel("About");
         ImGui::PushStyleColor(ImGuiCol_Text,Col::YELLOW);
         ImGui::TextUnformatted("APB Config Tool");
         ImGui::PopStyleColor();
         ImGui::TextWrapped("An open-source localisation and configuration utility for All Points Bulletin: Reloaded.");
-        ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
+        SectionLabel("Contributors");
         ImGui::Text("Author");        ImGui::SameLine(120); ImGui::TextUnformatted("writch");
-        ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
         ImGui::Text("Credits");       ImGui::SameLine(120); ImGui::TextWrapped("Mewpri - original creator of the ItemTypes stat maker");
-        ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
+        SectionLabel("Legal");
         ImGui::TextColored(Col::SUBTEXT,
             "This tool is not affiliated with Little Orbit or GamersFirst.\n"
             "APB: Reloaded(tm) is a trademark of Little Orbit LLC.");
@@ -1577,6 +1673,7 @@ struct PageSettings {
     void draw(){
         ImGui::BeginChild("##settings",{0,0},false);
         SectionLabel("Settings");
+        SectionNote("Shared application resources live here so the generator pages can stay focused on output configuration.");
 
         SectionLabel("Themes");
         ImGui::TextWrapped("Theme presets are loaded from this folder. Add or edit JSON files here, then reload themes from the tool pages.");

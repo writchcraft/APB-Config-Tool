@@ -39,17 +39,17 @@ static int s_current = PAGE_GRADIENT;
 struct NavItem  { const char* label; int page; };
 struct NavGroup { const char* header; std::vector<NavItem> items; bool open=false; };
 static std::vector<NavGroup> s_nav = {
-    { "Colour Edits", {{"Gradient Maker",PAGE_GRADIENT},{"Weapon Colour",PAGE_WCOLOUR}},      true  },
-    { "ItemTypes",    {{"Vehicles",PAGE_VEHICLE},{"Weapons",PAGE_WEAPON}}, false },
-    { "Localization", {{"Localization",PAGE_LOCALIZATION}},  false },
-    { "Extras",       {{"ARMAS Scanner",PAGE_ARMAS},{"Player Roles",PAGE_PLAYER_ROLES},{"Contact Description",PAGE_CONTACTS},{"Hex Converter",PAGE_HEX_CONVERTER}}, false },
-    { "Credits",      {{"Credits",PAGE_CREDITS}},            false },
-    { "Settings",     {{"Settings",PAGE_SETTINGS}},          false },
+    { "Colour Tools", {{"Gradient Maker",PAGE_GRADIENT},{"Weapon Colour",PAGE_WCOLOUR}}, true },
+    { "Stats",        {{"Vehicle Stats",PAGE_VEHICLE},{"Weapon Stats",PAGE_WEAPON}}, false },
+    { "Content",      {{"Player Roles",PAGE_PLAYER_ROLES},{"Contact Description",PAGE_CONTACTS}}, false },
+    { "Reference",    {{"Localization",PAGE_LOCALIZATION},{"Hex Converter",PAGE_HEX_CONVERTER}}, false },
+    { "Utilities",    {{"ARMAS Scanner",PAGE_ARMAS}}, false },
+    { "Application",  {{"Settings",PAGE_SETTINGS},{"Credits",PAGE_CREDITS}}, false },
 };
 static const char* pageCategory[PAGE_COUNT] = {
-    "Colour Edits","Colour Edits",
-    "ItemTypes","ItemTypes",
-    "Localization","Extras","Extras","Extras","Credits","Extras","Settings"
+    "Colour Tools","Colour Tools",
+    "Stats","Stats",
+    "Reference","Utilities","Content","Reference","Application","Content","Application"
 };
 static bool s_configLoaded = false;
 static std::string s_configStatus;

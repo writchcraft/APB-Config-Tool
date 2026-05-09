@@ -270,6 +270,7 @@ struct PageWeaponColour {
 
     void drawPresetConfig(){
         SectionLabel("Preset Config");
+        SectionNote("Use a reusable preset as the starting point for categories or specific weapon overrides.");
         ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::ITEM_BG);
         ImGui::BeginChild("##wcPresetConfig", {0.f, 146.f}, true);
 
@@ -377,6 +378,7 @@ struct PageWeaponColour {
 
     void drawSpecificWeaponsSection(){
         SectionLabel("Specific Weapon");
+        SectionNote("Load weapon entries from InventoryItemTypes.INT when category-level colouring needs individual exceptions.");
 
         ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::ITEM_BG);
         ImGui::BeginChild("##wcSpecificConfig", {0.f, 102.f}, true);
@@ -483,7 +485,9 @@ struct PageWeaponColour {
 
         ImGui::BeginChild("##wc",{0,0},false);
         SectionLabel("Weapon Colour - InventoryItemTypes.GER");
+        SectionNote("Organize rules in layers: base file settings first, reusable presets second, then category and specific weapon overrides.");
 
+        SectionLabel("File Settings");
         ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::ITEM_BG);
         ImGui::BeginChild("##wcFileConfig", {0.f, 74.f}, true);
         ImGui::Text("GER File:"); ImGui::SameLine();
@@ -520,6 +524,7 @@ struct PageWeaponColour {
 
         drawPresetConfig();
 
+        SectionLabel("Rule Sets");
         if(ImGui::BeginTabBar("##wcModeTabs")){
             if(ImGui::BeginTabItem("Weapon Categories")){
                 SectionLabel("Weapon Categories");
@@ -571,13 +576,13 @@ struct PageWeaponColour {
         }
 
         ImGui::Spacing();
-        if(ImGui::CollapsingHeader("Ignore List", ImGuiTreeNodeFlags_DefaultOpen)){
+        SectionLabel("Ignore List");
+        if(ImGui::CollapsingHeader("Show Ignore Rules", ImGuiTreeNodeFlags_DefaultOpen)){
             ImGui::TextColored(Col::SUBTEXT, "One key, key prefix, pasted line, or substring per line.");
             ImGui::InputTextMultiline("##wcIgnoreList", ignoreList, sizeof(ignoreList), {-1.f, 78.f});
         }
 
-        ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
-
+        SectionLabel("Run");
         bool busy = running.load();
         if(busy) ImGui::BeginDisabled();
         if(RunButton("Run##wc")) startAction();
@@ -586,9 +591,9 @@ struct PageWeaponColour {
         if(!lastOut.empty() && ImGui::Button("Open Output", {110,32})) OpenInExplorer(lastOut);
         if(busy){ ImGui::SameLine(); ImGui::TextColored(Col::YELLOW, "Running..."); }
 
-        ImGui::Spacing();
+        SectionLabel("Log");
         std::string logText = log.get();
-        ImGui::InputTextMultiline("##wclog", (char*)logText.c_str(), logText.size() + 1, {-1,0}, ImGuiInputTextFlags_ReadOnly);
+        ReadOnlyLogBox("##wclog", logText, {-1.f, 0.f});
         ImGui::EndChild();
     }
 
