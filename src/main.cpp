@@ -15,6 +15,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <string>
 #include <vector>
 #include <algorithm>
@@ -24,6 +25,7 @@
 
 // Forward
 namespace apb::gui { void Render(); }
+namespace apb::gui { ImFont* ResolvePreviewFont(const char* apbFontTag, float* outPixelSize); }
 
 // ── D3D11 globals — exposed so ImageLoader can upload textures ────────────
 ID3D11Device*           g_dev  = nullptr;
@@ -87,6 +89,63 @@ static bool LoadResourceBytes(int resourceId, std::vector<unsigned char>& out){
     return true;
 }
 
+struct PreviewFontSpec {
+    int resourceId;
+    const char* tag;
+    float pixelSize;
+};
+
+struct PreviewFontEntry {
+    ImFont* font = nullptr;
+    float pixelSize = 0.f;
+};
+
+static std::map<std::string, PreviewFontEntry> g_previewFonts;
+static std::vector<std::vector<unsigned char>> g_previewFontBlobs;
+
+static void RegisterPreviewFonts(ImGuiIO& io){
+    g_previewFonts.clear();
+    g_previewFontBlobs.clear();
+
+    const PreviewFontSpec specs[] = {
+        {IDR_FONT_HELVETICA_REGULAR, "APBMenus_Font.APB_Helvetica_Regular_11", 11.f},
+        {IDR_FONT_HELVETICA_REGULAR, "APBMenus_Font.APB_Helvetica_Regular_12", 12.f},
+        {IDR_FONT_HELVETICA_REGULAR, "APBMenus_Font.APB_Helvetica_Regular_14", 14.f},
+        {IDR_FONT_HELVETICA_REGULAR, "APBMenus_Font.APB_Helvetica_Regular_16", 16.f},
+        {IDR_FONT_HELVETICA_BOLD,    "APBMenus_Font.APB_Helvetica_Bold_11",    11.f},
+        {IDR_FONT_HELVETICA_BOLD,    "APBMenus_Font.APB_Helvetica_Bold_13",    13.f},
+        {IDR_FONT_HELVETICA_BOLD,    "APBMenus_Font.APB_Helvetica_Bold_14",    14.f},
+        {IDR_FONT_HELVETICA_BOLD,    "APBMenus_Font.APB_Helvetica_Bold_24",    24.f},
+    };
+
+    std::map<int, size_t> blobIndexByResource;
+    auto getBlob = [&](int resourceId) -> std::vector<unsigned char>* {
+        auto it = blobIndexByResource.find(resourceId);
+        if(it != blobIndexByResource.end())
+            return &g_previewFontBlobs[it->second];
+
+        std::vector<unsigned char> data;
+        if(!LoadResourceBytes(resourceId, data) || data.empty())
+            return nullptr;
+
+        const size_t index = g_previewFontBlobs.size();
+        g_previewFontBlobs.push_back(std::move(data));
+        blobIndexByResource[resourceId] = index;
+        return &g_previewFontBlobs[index];
+    };
+
+    for(const auto& spec : specs){
+        std::vector<unsigned char>* blob = getBlob(spec.resourceId);
+        if(!blob) continue;
+
+        ImFontConfig cfg;
+        cfg.FontDataOwnedByAtlas = false;
+        ImFont* font = io.Fonts->AddFontFromMemoryTTF(blob->data(), (int)blob->size(), spec.pixelSize, &cfg);
+        if(font)
+            g_previewFonts[spec.tag] = {font, spec.pixelSize};
+    }
+}
+
 // ── Create all required Documents\APBConfigTool\ subfolders on launch ─────
 static void InitDocumentsFolder(){
     namespace fs = std::filesystem;
@@ -94,6 +153,20 @@ static void InitDocumentsFolder(){
     fs::create_directories(base);
     fs::create_directories(base+"\\Themes");
     fs::create_directories(base+"\\Presets");
+}
+
+namespace apb::gui {
+ImFont* ResolvePreviewFont(const char* apbFontTag, float* outPixelSize){
+    if(outPixelSize) *outPixelSize = 0.f;
+    if(!apbFontTag || !*apbFontTag) return nullptr;
+
+    auto it = g_previewFonts.find(apbFontTag);
+    if(it == g_previewFonts.end())
+        return nullptr;
+
+    if(outPixelSize) *outPixelSize = it->second.pixelSize;
+    return it->second.font;
+}
 }
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND,UINT,WPARAM,LPARAM);
@@ -144,6 +217,7 @@ int WINAPI WinMain(HINSTANCE hi,HINSTANCE,LPSTR,int){
             io.Fonts->AddFontDefault();
         }
     }
+    RegisterPreviewFonts(io);
     ImGui_ImplWin32_Init(hw);
     ImGui_ImplDX11_Init(g_dev,g_ctx);
 

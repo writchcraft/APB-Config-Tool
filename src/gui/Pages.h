@@ -3,14 +3,17 @@
 #include "backend/InventoryItemTypes.h"
 #include "backend/Contacts.h"
 #include "backend/PlayerRoles.h"
+#include "backend/WeaponColour.h"
 #include "backend/WeaponItemTypes.h"
 #include "backend/VehicleItemTypes.h"
 #include "backend/ArmasScraper.h"
 #include "backend/AppDirs.h"
+#include "backend/GradientMaker.h"
 #include "backend/ImageLoader.h"
 #include "backend/ThemeLibrary.h"
 #include "../resource.h"
 #include <d3d11.h>
+#include <fstream>
 #include <filesystem>
 #include <cmath>
 #include <iomanip>
@@ -92,6 +95,91 @@ static float DrawStatLines(
         if(y + lineH > topLeft.y + 210.f) break;
     }
     return y;
+}
+
+enum class TextFileEncoding {
+    Utf8,
+    Utf8Bom,
+    Utf16LeBom
+};
+
+struct TextFileData {
+    std::wstring text;
+    TextFileEncoding encoding = TextFileEncoding::Utf8;
+};
+
+static std::wstring Utf8ToWide(const std::string& text){
+    if(text.empty()) return {};
+    const int needed = MultiByteToWideChar(CP_UTF8, 0, text.c_str(), (int)text.size(), nullptr, 0);
+    if(needed <= 0) return {};
+    std::wstring out((size_t)needed, L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, text.c_str(), (int)text.size(), out.data(), needed);
+    return out;
+}
+
+static std::string WideToUtf8(const std::wstring& text){
+    if(text.empty()) return {};
+    const int needed = WideCharToMultiByte(CP_UTF8, 0, text.c_str(), (int)text.size(), nullptr, 0, nullptr, nullptr);
+    if(needed <= 0) return {};
+    std::string out((size_t)needed, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, text.c_str(), (int)text.size(), out.data(), needed, nullptr, nullptr);
+    return out;
+}
+
+static bool ReadTextFilePreserveEncoding(const std::string& path, TextFileData& out){
+    std::ifstream in(path, std::ios::binary);
+    if(!in) return false;
+
+    std::string bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    if(bytes.size() >= 2 &&
+       (unsigned char)bytes[0] == 0xFF &&
+       (unsigned char)bytes[1] == 0xFE){
+        out.encoding = TextFileEncoding::Utf16LeBom;
+        const size_t wcharCount = (bytes.size() - 2) / sizeof(wchar_t);
+        out.text.assign(reinterpret_cast<const wchar_t*>(bytes.data() + 2), wcharCount);
+        return true;
+    }
+
+    if(bytes.size() >= 3 &&
+       (unsigned char)bytes[0] == 0xEF &&
+       (unsigned char)bytes[1] == 0xBB &&
+       (unsigned char)bytes[2] == 0xBF){
+        out.encoding = TextFileEncoding::Utf8Bom;
+        out.text = Utf8ToWide(bytes.substr(3));
+        return true;
+    }
+
+    out.encoding = TextFileEncoding::Utf8;
+    out.text = Utf8ToWide(bytes);
+    return true;
+}
+
+static bool WriteTextFilePreserveEncoding(const std::string& path, const TextFileData& data){
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if(!out) return false;
+
+    switch(data.encoding){
+        case TextFileEncoding::Utf16LeBom: {
+            const unsigned char bom[2] = {0xFF, 0xFE};
+            out.write(reinterpret_cast<const char*>(bom), sizeof(bom));
+            if(!data.text.empty())
+                out.write(reinterpret_cast<const char*>(data.text.data()), (std::streamsize)(data.text.size() * sizeof(wchar_t)));
+            return (bool)out;
+        }
+        case TextFileEncoding::Utf8Bom: {
+            const unsigned char bom[3] = {0xEF, 0xBB, 0xBF};
+            out.write(reinterpret_cast<const char*>(bom), sizeof(bom));
+            const std::string utf8 = WideToUtf8(data.text);
+            if(!utf8.empty()) out.write(utf8.data(), (std::streamsize)utf8.size());
+            return (bool)out;
+        }
+        case TextFileEncoding::Utf8:
+        default: {
+            const std::string utf8 = WideToUtf8(data.text);
+            if(!utf8.empty()) out.write(utf8.data(), (std::streamsize)utf8.size());
+            return (bool)out;
+        }
+    }
 }
 
 // ── Preview card (image + stat overlay) ──────────────────────────────────
@@ -192,9 +280,9 @@ struct ColourSchemeWidget {
     bool  presetEquipped = false;
     int   presetThemeIdx = -1;
     float singleCol[3] = {1,1,1};
-    float gradStart[3] = {0.08f,0.00f,0.78f};
-    float tripleMid[3] = {0.36f,0.08f,0.82f};
-    float gradEnd[3]   = {0.65f,0.02f,0.40f};
+    float gradStart[3] = {1.f,1.f,1.f};
+    float tripleMid[3] = {1.f,1.f,1.f};
+    float gradEnd[3]   = {1.f,1.f,1.f};
 
     // Base scheme labels (indices 0-4 are fixed)
     static constexpr const char* BASE_SCHEMES[] = {
@@ -208,9 +296,13 @@ struct ColourSchemeWidget {
         presetEquipped=false;
         presetThemeIdx=-1;
         singleCol[0]=1.f; singleCol[1]=1.f; singleCol[2]=1.f;
-        gradStart[0]=0.08f; gradStart[1]=0.00f; gradStart[2]=0.78f;
-        tripleMid[0]=0.36f; tripleMid[1]=0.08f; tripleMid[2]=0.82f;
-        gradEnd[0]=0.65f;   gradEnd[1]=0.02f;   gradEnd[2]=0.40f;
+        setManualGradientWhite();
+    }
+
+    void setManualGradientWhite(){
+        gradStart[0]=1.f; gradStart[1]=1.f; gradStart[2]=1.f;
+        tripleMid[0]=1.f; tripleMid[1]=1.f; tripleMid[2]=1.f;
+        gradEnd[0]=1.f;   gradEnd[1]=1.f;   gradEnd[2]=1.f;
     }
 
     const char* currentStyleLabel(const ThemeLibrary& lib) const {
@@ -283,9 +375,12 @@ struct ColourSchemeWidget {
             if(ImGui::BeginCombo(cid, currentStyleLabel(lib))){
                 for(int i=0;i<BASE_COUNT;++i){
                     if(ImGui::Selectable(BASE_SCHEMES[i], schemeIdx==i)){
+                        const bool leavingPresetForManualGradient = presetEquipped && (i == 3 || i == 4);
                         schemeIdx=i;
                         presetEquipped=false;
                         presetThemeIdx=-1;
+                        if(leavingPresetForManualGradient)
+                            setManualGradientWhite();
                         changed=true;
                     }
                 }
@@ -742,8 +837,6 @@ struct PagePlayerRoles {
             OpenInExplorer(lastOut);
 
         drawPreviewGallery();
-        SectionLabel("Log");
-        ReadOnlyLogBox("##proleslog", log.get(), {-1.f, 120.f});
         ImGui::EndChild();
     }
 };
@@ -892,6 +985,723 @@ struct PageContactDescription {
         SectionLabel("Log");
         std::string t = log.get();
         ReadOnlyLogBox("##contactslog", t, {-1.f, -1.f});
+        ImGui::EndChild();
+    }
+};
+
+// ══════════════════════════════════════════════════════════════════════════
+// PageReloadResupplyText
+// ══════════════════════════════════════════════════════════════════════════
+struct PageReloadResupplyText {
+    struct TextStyleState {
+        char text[512] = {};
+        int fontIdx = 0;
+        int modeIdx = 0; // 0=SOLID, 1=Stepped, 2=Smooth, 3=Triple Gradient
+        float solid[3] = {1.f, 1.f, 1.f};
+        float stepped[6][3] = {
+            {1.f,1.f,1.f}, {1.f,1.f,1.f}, {1.f,1.f,1.f},
+            {1.f,1.f,1.f}, {1.f,1.f,1.f}, {1.f,1.f,1.f}
+        };
+        float smoothStart[3] = {1.f, 1.f, 1.f};
+        float smoothEnd[3] = {1.f, 1.f, 1.f};
+        float tripleStart[3] = {1.f, 1.f, 1.f};
+        float tripleMid[3] = {1.f, 1.f, 1.f};
+        float tripleEnd[3] = {1.f, 1.f, 1.f};
+    };
+
+    char gerPath[MAX_PATH] = {};
+    int activeTabIdx = 0;
+    bool applySavedTabSelection = true;
+    TextStyleState reload;
+    TextStyleState resupply;
+    std::vector<std::string> fonts;
+    ThreadLog log;
+    std::string lastSavedPath;
+    bool autoDetectTried = false;
+    bool autoLoadAttempted = false;
+    TextFileEncoding fileEncoding = TextFileEncoding::Utf16LeBom;
+    ID3D11ShaderResourceView* backgroundSrv = nullptr;
+    int backgroundW = 0;
+    int backgroundH = 0;
+
+    static constexpr const char* MODES[] = {"SOLID", "Stepped", "Smooth", "Triple Gradient"};
+
+    PageReloadResupplyText(){
+        fonts = availableFonts();
+        resetStyle(reload, "Reload");
+        resetStyle(resupply, "Resupply");
+    }
+
+    static RGB rgbFromFloats(const float c[3]){
+        return {c[0], c[1], c[2]};
+    }
+
+    static void copyColor(float dst[3], const float src[3]){
+        dst[0] = src[0];
+        dst[1] = src[1];
+        dst[2] = src[2];
+    }
+
+    static bool sameRgb(const RGB& a, const RGB& b, float epsilon = 0.0015f){
+        return std::fabs((float)(a.r - b.r)) <= epsilon &&
+               std::fabs((float)(a.g - b.g)) <= epsilon &&
+               std::fabs((float)(a.b - b.b)) <= epsilon;
+    }
+
+    static std::vector<int> bouncePattern(int m){
+        if(m <= 1) return {0};
+        std::vector<int> out;
+        for(int i = 0; i < m; ++i) out.push_back(i);
+        for(int i = m - 2; i >= 1; --i) out.push_back(i);
+        return out;
+    }
+
+    static void resetStyle(TextStyleState& state, const char* defaultText){
+        std::snprintf(state.text, sizeof(state.text), "%s", defaultText ? defaultText : "");
+        state.fontIdx = 0;
+        state.modeIdx = 0;
+        state.solid[0] = state.solid[1] = state.solid[2] = 1.f;
+        state.smoothStart[0] = state.smoothStart[1] = state.smoothStart[2] = 1.f;
+        state.smoothEnd[0] = state.smoothEnd[1] = state.smoothEnd[2] = 1.f;
+        state.tripleStart[0] = state.tripleStart[1] = state.tripleStart[2] = 1.f;
+        state.tripleMid[0] = state.tripleMid[1] = state.tripleMid[2] = 1.f;
+        state.tripleEnd[0] = state.tripleEnd[1] = state.tripleEnd[2] = 1.f;
+        for(auto& step : state.stepped){
+            step[0] = step[1] = step[2] = 1.f;
+        }
+    }
+
+    void ensureDefaultGerPath(){
+        if(autoDetectTried || gerPath[0]) return;
+        autoDetectTried = true;
+        const std::string detected = DetectApbLocalizationFile("GER", "APBUserInterface.GER");
+        if(!detected.empty()) std::snprintf(gerPath, sizeof(gerPath), "%s", detected.c_str());
+    }
+
+    bool isActionRunning() const { return false; }
+    bool canStartAction() const { return gerPath[0] != '\0'; }
+    void cancelAction(){}
+
+    void startAction(){
+        saveCurrentSection();
+    }
+
+    static std::vector<std::wstring> splitLines(const std::wstring& text){
+        std::vector<std::wstring> lines;
+        size_t start = 0;
+        while(start <= text.size()){
+            size_t end = text.find(L'\n', start);
+            if(end == std::wstring::npos){
+                std::wstring line = text.substr(start);
+                if(!line.empty() && line.back() == L'\r') line.pop_back();
+                lines.push_back(std::move(line));
+                break;
+            }
+            std::wstring line = text.substr(start, end - start);
+            if(!line.empty() && line.back() == L'\r') line.pop_back();
+            lines.push_back(std::move(line));
+            start = end + 1;
+        }
+        if(lines.empty()) lines.push_back(L"");
+        return lines;
+    }
+
+    static std::wstring joinLines(const std::vector<std::wstring>& lines){
+        std::wstring out;
+        for(size_t i = 0; i < lines.size(); ++i){
+            if(i) out += L"\r\n";
+            out += lines[i];
+        }
+        if(!out.empty()) out += L"\r\n";
+        return out;
+    }
+
+    static std::string sanitizePreviewText(const char* raw, const char* fallback){
+        std::string text = raw ? raw : "";
+        for(char& ch : text){
+            if(ch == '\r' || ch == '\n' || ch == '\t') ch = ' ';
+        }
+
+        std::string collapsed;
+        collapsed.reserve(text.size());
+        bool prevSpace = true;
+        for(char ch : text){
+            const bool isSpace = ch == ' ';
+            if(isSpace){
+                if(!prevSpace) collapsed.push_back(' ');
+            } else {
+                collapsed.push_back(ch);
+            }
+            prevSpace = isSpace;
+        }
+
+        while(!collapsed.empty() && collapsed.front() == ' ') collapsed.erase(collapsed.begin());
+        while(!collapsed.empty() && collapsed.back() == ' ') collapsed.pop_back();
+        if(collapsed.empty()) collapsed = fallback ? fallback : "";
+        return collapsed;
+    }
+
+    static std::string stripTags(const std::string& value){
+        return std::regex_replace(value, std::regex("<[^>]*>"), "");
+    }
+
+    static float previewFontSize(float width, float height, const std::string& text){
+        const float len = (float)std::max<size_t>(text.size(), 1);
+        const float byHeight = height * 0.42f;
+        const float byWidth = width / std::max(4.5f, len * 0.58f);
+        return std::clamp(std::min(byHeight, byWidth), 20.f, 54.f);
+    }
+
+    const char* fontLabel(int idx) const{
+        if(fonts.empty()) return "None";
+        idx = std::clamp(idx, 0, (int)fonts.size() - 1);
+        return fonts[idx].c_str();
+    }
+
+    void drawFontCombo(const char* id, int& fontIdx){
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        if(fonts.empty()){
+            ImGui::BeginDisabled();
+            char none[] = "None";
+            ImGui::InputText(id, none, sizeof(none), ImGuiInputTextFlags_ReadOnly);
+            ImGui::EndDisabled();
+            return;
+        }
+
+        fontIdx = std::clamp(fontIdx, 0, (int)fonts.size() - 1);
+        if(ImGui::BeginCombo(id, fonts[fontIdx].c_str())){
+            for(int i = 0; i < (int)fonts.size(); ++i){
+                if(ImGui::Selectable(fonts[i].c_str(), fontIdx == i))
+                    fontIdx = i;
+                if(fontIdx == i) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+    }
+
+    static void drawModeCombo(const char* id, TextStyleState& state){
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        const int previewIdx = std::clamp(state.modeIdx, 0, 3);
+        if(ImGui::BeginCombo(id, MODES[previewIdx])){
+            for(int i = 0; i < 4; ++i){
+                if(ImGui::Selectable(MODES[i], state.modeIdx == i))
+                    state.modeIdx = i;
+                if(state.modeIdx == i) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+    }
+
+    static void drawColourControls(const char* prefix, TextStyleState& state){
+        ImGui::PushID(prefix);
+        if(state.modeIdx == 0){
+            ColorPickerButton("##solid", state.solid);
+        } else if(state.modeIdx == 1){
+            for(int i = 0; i < 6; ++i){
+                char id[16];
+                std::snprintf(id, sizeof(id), "##step%d", i);
+                ColorPickerButton(id, state.stepped[i], 22.f, 20.f);
+                if(i < 5) ImGui::SameLine();
+            }
+        } else if(state.modeIdx == 2){
+            ImGui::TextUnformatted("Start");
+            ImGui::SameLine();
+            ColorPickerButton("##smoothA", state.smoothStart);
+            ImGui::SameLine();
+            ImGui::TextUnformatted("End");
+            ImGui::SameLine();
+            ColorPickerButton("##smoothB", state.smoothEnd);
+        } else {
+            ImGui::TextUnformatted("1");
+            ImGui::SameLine();
+            ColorPickerButton("##tripleA", state.tripleStart);
+            ImGui::SameLine();
+            ImGui::TextUnformatted("2");
+            ImGui::SameLine();
+            ColorPickerButton("##tripleB", state.tripleMid);
+            ImGui::SameLine();
+            ImGui::TextUnformatted("3");
+            ImGui::SameLine();
+            ColorPickerButton("##tripleC", state.tripleEnd);
+        }
+        ImGui::PopID();
+    }
+
+    std::string buildFormattedValue(const TextStyleState& state, const char* fallbackText) const{
+        const std::string plain = sanitizePreviewText(state.text, fallbackText);
+        std::string coloured;
+        if(state.modeIdx == 1){
+            std::vector<RGB> palette;
+            palette.reserve(6);
+            for(const auto& step : state.stepped)
+                palette.push_back(rgbFromFloats(step));
+            coloured = hardGradientString(plain, palette, true);
+        } else if(state.modeIdx == 2){
+            coloured = smoothGradientString(plain, rgbFromFloats(state.smoothStart), rgbFromFloats(state.smoothEnd), true);
+        } else if(state.modeIdx == 3){
+            coloured = tripleGradientString(plain,
+                rgbFromFloats(state.tripleStart),
+                rgbFromFloats(state.tripleMid),
+                rgbFromFloats(state.tripleEnd),
+                true);
+        } else {
+            const RGB solid = rgbFromFloats(state.solid);
+            char buf[128];
+            std::snprintf(buf, sizeof(buf), "<Color:R=%.6f G=%.6f B=%.6f>", solid.r, solid.g, solid.b);
+            coloured = std::string(buf) + plain + "<Color:/>";
+        }
+
+        const char* font = fontLabel(state.fontIdx);
+        if(font && std::strcmp(font, "None") != 0 && *font)
+            return std::string("<Fonts:") + font + ">" + coloured;
+        return coloured;
+    }
+
+    void setFontFromTag(TextStyleState& state, const std::string& tag){
+        for(int i = 0; i < (int)fonts.size(); ++i){
+            if(fonts[i] == tag){
+                state.fontIdx = i;
+                return;
+            }
+        }
+        state.fontIdx = 0;
+    }
+
+    static bool isLinearGradient(const std::vector<RGB>& colours){
+        if(colours.size() < 2) return false;
+        const RGB start = colours.front();
+        const RGB end = colours.back();
+        for(size_t i = 0; i < colours.size(); ++i){
+            const double t = colours.size() == 1 ? 0.0 : (double)i / (double)(colours.size() - 1);
+            if(!sameRgb(colours[i], lerpRGB(start, end, t), 0.004f))
+                return false;
+        }
+        return true;
+    }
+
+    static bool tryParseStepped(const std::vector<RGB>& colours, TextStyleState& state){
+        if(colours.size() < 7) return false;
+        const int maxPalette = std::min<int>(6, (int)colours.size());
+        for(int paletteCount = maxPalette; paletteCount >= 2; --paletteCount){
+            const std::vector<int> pattern = bouncePattern(paletteCount);
+            bool matches = true;
+            for(size_t i = 0; i < colours.size(); ++i){
+                if(!sameRgb(colours[i], colours[pattern[i % pattern.size()]], 0.004f)){
+                    matches = false;
+                    break;
+                }
+            }
+            if(!matches) continue;
+
+            state.modeIdx = 1;
+            for(int i = 0; i < 6; ++i){
+                const RGB fill = colours[std::min(i, paletteCount - 1)];
+                state.stepped[i][0] = (float)fill.r;
+                state.stepped[i][1] = (float)fill.g;
+                state.stepped[i][2] = (float)fill.b;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    void applyLoadedValue(TextStyleState& state, const std::wstring& loadedValue, const char* defaultText){
+        resetStyle(state, defaultText);
+        std::string value = WideToUtf8(loadedValue);
+        if(value.empty()) return;
+
+        std::smatch fontMatch;
+        const std::regex fontRx(R"(^<Fonts:([^>]+)>)", std::regex_constants::icase);
+        if(std::regex_search(value, fontMatch, fontRx)){
+            setFontFromTag(state, fontMatch[1].str());
+            value = fontMatch.suffix().str();
+        }
+
+        const std::string plain = sanitizePreviewText(stripTags(value).c_str(), defaultText);
+        std::snprintf(state.text, sizeof(state.text), "%s", plain.c_str());
+
+        std::vector<RGB> colours;
+        const std::regex colorRx(
+            R"(<\s*Color\s*:\s*R\s*=\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s+G\s*=\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s+B\s*=\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*>)",
+            std::regex_constants::icase);
+        for(std::sregex_iterator it(value.begin(), value.end(), colorRx), end; it != end; ++it){
+            colours.push_back({
+                std::stod((*it)[1].str()),
+                std::stod((*it)[2].str()),
+                std::stod((*it)[3].str())
+            });
+        }
+
+        if(colours.empty()) return;
+
+        bool same = true;
+        for(size_t i = 1; i < colours.size(); ++i){
+            if(!sameRgb(colours[i], colours.front())){
+                same = false;
+                break;
+            }
+        }
+        if(same){
+            state.modeIdx = 0;
+            state.solid[0] = (float)colours.front().r;
+            state.solid[1] = (float)colours.front().g;
+            state.solid[2] = (float)colours.front().b;
+            return;
+        }
+
+        if(tryParseStepped(colours, state))
+            return;
+
+        if(isLinearGradient(colours)){
+            state.modeIdx = 2;
+            state.smoothStart[0] = (float)colours.front().r;
+            state.smoothStart[1] = (float)colours.front().g;
+            state.smoothStart[2] = (float)colours.front().b;
+            state.smoothEnd[0] = (float)colours.back().r;
+            state.smoothEnd[1] = (float)colours.back().g;
+            state.smoothEnd[2] = (float)colours.back().b;
+            return;
+        }
+
+        state.modeIdx = 3;
+        const RGB first = colours.front();
+        const RGB middle = colours[colours.size() / 2];
+        const RGB last = colours.back();
+        state.tripleStart[0] = (float)first.r;
+        state.tripleStart[1] = (float)first.g;
+        state.tripleStart[2] = (float)first.b;
+        state.tripleMid[0] = (float)middle.r;
+        state.tripleMid[1] = (float)middle.g;
+        state.tripleMid[2] = (float)middle.b;
+        state.tripleEnd[0] = (float)last.r;
+        state.tripleEnd[1] = (float)last.g;
+        state.tripleEnd[2] = (float)last.b;
+    }
+
+    void ensurePreviewTexture(){
+        if(backgroundSrv || !g_dev) return;
+        namespace fs = std::filesystem;
+        const char* fileName = "reload_resupply_preview.png";
+
+        std::vector<fs::path> roots;
+        char exeBuf[MAX_PATH] = {};
+        GetModuleFileNameA(nullptr, exeBuf, MAX_PATH);
+        fs::path exeDir = fs::path(exeBuf).parent_path();
+        for(int i = 0; i < 4 && !exeDir.empty(); ++i){
+            roots.push_back(exeDir);
+            exeDir = exeDir.parent_path();
+        }
+
+        fs::path cwd = fs::current_path();
+        for(int i = 0; i < 3 && !cwd.empty(); ++i){
+            roots.push_back(cwd);
+            cwd = cwd.parent_path();
+        }
+
+        roots.push_back(fs::path(apb::AssetsDir()));
+
+        for(const auto& root : roots){
+            const std::vector<fs::path> candidates = {
+                root / "Assets" / "Images_UI" / fileName,
+                root / "Images_UI" / fileName
+            };
+            for(const auto& candidate : candidates){
+                if(apb::LoadTextureFromFile(g_dev, candidate.string(), &backgroundSrv, &backgroundW, &backgroundH))
+                    return;
+            }
+        }
+    }
+
+    bool loadFromFile(){
+        autoLoadAttempted = true;
+        if(!gerPath[0]){
+            log.append("GER file path is empty.");
+            return false;
+        }
+
+        TextFileData data;
+        if(!ReadTextFilePreserveEncoding(gerPath, data)){
+            log.append("Failed to load APBUserInterface.GER.");
+            return false;
+        }
+
+        fileEncoding = data.encoding;
+        std::wstring reloadValue;
+        std::wstring resupplyValue;
+        bool foundReload = false;
+        bool foundResupply = false;
+
+        for(const std::wstring& line : splitLines(data.text)){
+            if(line.rfind(L"Reload=", 0) == 0){
+                reloadValue = line.substr(7);
+                foundReload = true;
+            } else if(line.rfind(L"Resupply=", 0) == 0){
+                resupplyValue = line.substr(9);
+                foundResupply = true;
+            }
+        }
+
+        applyLoadedValue(reload, reloadValue, "Reload");
+        applyLoadedValue(resupply, resupplyValue, "Resupply");
+        log.append(std::string("Loaded ") + gerPath);
+        if(!foundReload) log.append("Reload= entry not found.");
+        if(!foundResupply) log.append("Resupply= entry not found.");
+        return true;
+    }
+
+    bool saveEntries(bool saveReload, bool saveResupply){
+        if(!gerPath[0]){
+            log.append("GER file path is empty.");
+            return false;
+        }
+
+        TextFileData data;
+        const bool fileExists = ReadTextFilePreserveEncoding(gerPath, data);
+        if(!fileExists){
+            data.encoding = fileEncoding;
+            data.text.clear();
+        }
+
+        std::vector<std::wstring> lines = splitLines(data.text);
+        if(lines.size() == 1 && lines[0].empty() && data.text.empty()) lines.clear();
+
+        const std::wstring reloadLine = L"Reload=" + Utf8ToWide(buildFormattedValue(reload, "Reload"));
+        const std::wstring resupplyLine = L"Resupply=" + Utf8ToWide(buildFormattedValue(resupply, "Resupply"));
+        bool foundReload = false;
+        bool foundResupply = false;
+
+        for(std::wstring& line : lines){
+            if(saveReload && line.rfind(L"Reload=", 0) == 0){
+                line = reloadLine;
+                foundReload = true;
+            } else if(saveResupply && line.rfind(L"Resupply=", 0) == 0){
+                line = resupplyLine;
+                foundResupply = true;
+            }
+        }
+
+        if(saveReload && !foundReload) lines.push_back(reloadLine);
+        if(saveResupply && !foundResupply) lines.push_back(resupplyLine);
+
+        data.encoding = fileExists ? data.encoding : fileEncoding;
+        data.text = joinLines(lines);
+        if(!WriteTextFilePreserveEncoding(gerPath, data)){
+            log.append("Failed to save APBUserInterface.GER.");
+            return false;
+        }
+
+        lastSavedPath = gerPath;
+        autoLoadAttempted = true;
+        if(saveReload && saveResupply) log.append(std::string("Saved Reload and Resupply in ") + gerPath);
+        else if(saveReload) log.append(std::string("Saved Reload in ") + gerPath);
+        else if(saveResupply) log.append(std::string("Saved Resupply in ") + gerPath);
+        return true;
+    }
+
+    bool saveCurrentSection(){
+        return activeTabIdx == 0
+            ? saveEntries(true, false)
+            : saveEntries(false, true);
+    }
+
+    void tryAutoLoad(){
+        if(autoLoadAttempted || !gerPath[0]) return;
+        loadFromFile();
+    }
+
+    static ImU32 previewColor(const RGB& rgb){
+        return IM_COL32(
+            std::clamp((int)std::lround(rgb.r * 255.0), 0, 255),
+            std::clamp((int)std::lround(rgb.g * 255.0), 0, 255),
+            std::clamp((int)std::lround(rgb.b * 255.0), 0, 255),
+            204);
+    }
+
+    std::vector<ImU32> buildPreviewPalette(const TextStyleState& state, const std::string& text) const{
+        int visibleChars = 0;
+        for(char ch : text)
+            if(ch != ' ') ++visibleChars;
+
+        std::vector<ImU32> out;
+        out.reserve((size_t)visibleChars);
+        if(visibleChars == 0) return out;
+
+        if(state.modeIdx == 1){
+            const std::vector<int> pattern = bouncePattern(6);
+            for(int i = 0; i < visibleChars; ++i)
+                out.push_back(previewColor(rgbFromFloats(state.stepped[pattern[i % pattern.size()]])));
+            return out;
+        }
+
+        if(state.modeIdx == 2){
+            const RGB start = rgbFromFloats(state.smoothStart);
+            const RGB end = rgbFromFloats(state.smoothEnd);
+            for(int i = 0; i < visibleChars; ++i){
+                const double t = visibleChars == 1 ? 0.0 : (double)i / (double)(visibleChars - 1);
+                out.push_back(previewColor(lerpRGB(start, end, t)));
+            }
+            return out;
+        }
+
+        if(state.modeIdx == 3){
+            const RGB start = rgbFromFloats(state.tripleStart);
+            const RGB middle = rgbFromFloats(state.tripleMid);
+            const RGB end = rgbFromFloats(state.tripleEnd);
+            for(int i = 0; i < visibleChars; ++i){
+                const double t = visibleChars == 1 ? 0.0 : (double)i / (double)(visibleChars - 1);
+                const RGB rgb = t <= 0.5
+                    ? lerpRGB(start, middle, t * 2.0)
+                    : lerpRGB(middle, end, (t - 0.5) * 2.0);
+                out.push_back(previewColor(rgb));
+            }
+            return out;
+        }
+
+        out.assign((size_t)visibleChars, previewColor(rgbFromFloats(state.solid)));
+        return out;
+    }
+
+    void drawPreview(const TextStyleState& state, const char* fallbackText){
+        ensurePreviewTexture();
+
+        const std::string previewText = sanitizePreviewText(state.text, fallbackText);
+
+        const float availW = ImGui::GetContentRegionAvail().x;
+        const float previewW = std::min(availW, 760.f);
+        const float fallbackH = previewW * (129.f / 499.f);
+        const float previewH = backgroundSrv && backgroundW > 0
+            ? previewW * ((float)backgroundH / (float)backgroundW)
+            : fallbackH;
+
+        ImVec2 pos = ImGui::GetCursorScreenPos();
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        if(backgroundSrv){
+            dl->AddImage((ImTextureID)backgroundSrv, pos, {pos.x + previewW, pos.y + previewH});
+        } else {
+            dl->AddRectFilled(pos, {pos.x + previewW, pos.y + previewH}, IM_COL32(34, 34, 34, 255));
+            dl->AddRect(pos, {pos.x + previewW, pos.y + previewH}, IM_COL32(90, 90, 90, 255));
+        }
+
+        float selectedPixelSize = 12.f;
+        ImFont* font = ResolvePreviewFont(fontLabel(state.fontIdx), &selectedPixelSize);
+        if(!font) font = ImGui::GetFont();
+
+        float fontSize = previewFontSize(previewW, previewH, previewText);
+        if(selectedPixelSize > 0.f)
+            fontSize = std::clamp(fontSize * (selectedPixelSize / 14.f), 18.f, 72.f);
+
+        const ImVec2 textSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.f, previewText.c_str());
+        const ImVec2 textPos = {
+            pos.x + (previewW - textSize.x) * 0.5f,
+            pos.y + (previewH - textSize.y) * 0.5f
+        };
+
+        const std::vector<ImU32> palette = buildPreviewPalette(state, previewText);
+        float x = textPos.x;
+        size_t visibleIdx = 0;
+        for(char ch : previewText){
+            char buf[2] = {ch, '\0'};
+            if(ch != ' ' && visibleIdx < palette.size())
+                dl->AddText(font, fontSize, {x, textPos.y}, palette[visibleIdx++], buf);
+            x += font->CalcTextSizeA(fontSize, FLT_MAX, 0.f, buf).x;
+        }
+        ImGui::Dummy({previewW, previewH});
+    }
+
+    void drawEntryEditor(const char* tabId, const char* title, TextStyleState& state, const char* fallbackText){
+        SectionLabel(title);
+        if(BeginSectionTable(tabId, 124.f, 110.f)){
+            BeginSectionRow("Text");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputText("##rrtext", state.text, sizeof(state.text));
+
+            BeginSectionRow("Mode");
+            drawModeCombo("##rrmode", state);
+
+            BeginSectionRow("Colours");
+            drawColourControls("rrcolours", state);
+
+            BeginSectionRow("Font");
+            drawFontCombo("##rrfont", state.fontIdx);
+            EndSectionTable();
+        }
+
+        SectionLabel("Preview");
+        if(BeginSectionTable("##rrpreviewgrid", 124.f, 110.f)){
+            BeginSectionRow("");
+            ImGui::Dummy({0.f, 0.f});
+            NextSectionAction();
+            if(ImGui::Button("Save##rrsave")) saveCurrentSection();
+            EndSectionTable();
+        }
+        drawPreview(state, fallbackText);
+        SectionNote("Preview uses embedded Helvetica faces for mapped APB font tags. None keeps save output tag-free.");
+    }
+
+    void draw(){
+        ensureDefaultGerPath();
+        tryAutoLoad();
+
+        ImGui::BeginChild("##reloadresupply", {0, 0}, false);
+        SectionLabel("Reload / Resupply Text");
+        SectionNote("Edit the APBUserInterface.GER Reload and Resupply entries and preview them against the in-game background.");
+
+        SectionLabel("File");
+        if(BeginSectionTable("##rrfilegrid", 124.f, 110.f)){
+            BeginSectionRow("GER File");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if(ImGui::InputText("##rrgerpath", gerPath, MAX_PATH)){
+                autoLoadAttempted = true;
+            }
+            NextSectionAction();
+            if(ImGui::Button("Browse##rrger")){
+                std::string s;
+                if(BrowseFile(s, "GER Files\0*.ger;*.GER\0All Files\0*.*\0\0")){
+                    std::snprintf(gerPath, sizeof(gerPath), "%s", s.c_str());
+                    autoLoadAttempted = false;
+                }
+            }
+
+            BeginSectionRow("Actions");
+            if(ImGui::Button("Auto Detect##rrdetect")){
+                gerPath[0] = '\0';
+                autoDetectTried = false;
+                autoLoadAttempted = false;
+                applySavedTabSelection = true;
+                resetStyle(reload, "Reload");
+                resetStyle(resupply, "Resupply");
+                ensureDefaultGerPath();
+                tryAutoLoad();
+                if(!gerPath[0]) log.append("APBUserInterface.GER was not auto-detected.");
+            }
+            ImGui::SameLine();
+            if(ImGui::Button("Load##rrload")) loadFromFile();
+            ImGui::SameLine();
+            if(gerPath[0] && ImGui::Button("Open##rropen")) OpenInExplorer(gerPath);
+            EndSectionTable();
+        }
+
+        if(ImGui::BeginTabBar("##rrtabs")){
+            if(ImGui::BeginTabItem("Reload", nullptr,
+                (applySavedTabSelection && activeTabIdx == 0) ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None)){
+                activeTabIdx = 0;
+                applySavedTabSelection = false;
+                drawEntryEditor("##rrreloadgrid", "Reload", reload, "Reload");
+                ImGui::EndTabItem();
+            }
+            if(ImGui::BeginTabItem("Resupply", nullptr,
+                (applySavedTabSelection && activeTabIdx == 1) ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None)){
+                activeTabIdx = 1;
+                applySavedTabSelection = false;
+                drawEntryEditor("##rrresupplygrid", "Resupply", resupply, "Resupply");
+                ImGui::EndTabItem();
+            }
+            ImGui::EndTabBar();
+        }
+
+        SectionLabel("Log");
+        std::string t = log.get();
+        ReadOnlyLogBox("##rrlog", t, {-1.f, -1.f});
         ImGui::EndChild();
     }
 };

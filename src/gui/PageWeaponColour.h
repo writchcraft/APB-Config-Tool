@@ -481,17 +481,7 @@ struct PageWeaponColour {
     void drawFileSettingsSection(){
         SectionLabel("File Settings");
         ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::ITEM_BG);
-        ImGui::BeginChild("##wcFileConfig", {0.f, 128.f}, true);
-        if(BeginSectionTable("##wcFileGrid", 92.f, 78.f)){
-            BeginSectionRow("Style");
-            ImGui::TextColored(Col::SUBTEXT, "Fonts are set per rule, next to each colour row.");
-            EndSectionTable();
-        }
-
-        ImGui::Spacing();
-        ImGui::Separator();
-        ImGui::Spacing();
-
+        ImGui::BeginChild("##wcFileConfig", {0.f, 96.f}, true);
         if(BeginSectionTable("##wcFileInventoryGrid", 126.f, 86.f)){
             BeginSectionRow("InventoryItemTypes");
             ImGui::SetNextItemWidth(-FLT_MIN);
@@ -937,7 +927,6 @@ struct PageWeaponColour {
         SectionNote("This tool shares the same target file and run output as Weapon Colour. Use it for one-off weapon exceptions.");
 
         drawSpecificOverridesMergedSection();
-        drawOutputSection();
         drawRunAndLogSections(false);
         ImGui::EndChild();
     }

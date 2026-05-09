@@ -19,6 +19,7 @@ enum PageId {
     PAGE_GRADIENT=0, PAGE_WCOLOUR,
     PAGE_VEHICLE, PAGE_WEAPON,
     PAGE_LOCALIZATION, PAGE_ARMAS, PAGE_PLAYER_ROLES, PAGE_HEX_CONVERTER, PAGE_CREDITS,
+    PAGE_RELOAD_RESUPPLY,
     PAGE_CONTACTS,
     PAGE_SETTINGS,
     PAGE_WCOLOUR_SPECIFIC,
@@ -33,6 +34,7 @@ static PageArmasScrape        s_armas;
 static PagePlayerRoles        s_playerRoles;
 static PageHexConverter       s_hexConverter;
 static PageCredits            s_credits;
+static PageReloadResupplyText s_reloadResupply;
 static PageContactDescription s_contacts;
 static PageSettings           s_settings;
 static int s_current = PAGE_GRADIENT;
@@ -42,7 +44,7 @@ struct NavGroup { const char* header; std::vector<NavItem> items; bool open=fals
 static std::vector<NavGroup> s_nav = {
     { "Colour Tools", {{"Gradient Maker",PAGE_GRADIENT},{"Weapon Colour",PAGE_WCOLOUR},{"Specific Weapon Overrides",PAGE_WCOLOUR_SPECIFIC}}, true },
     { "Stats",        {{"Vehicle Stats",PAGE_VEHICLE},{"Weapon Stats",PAGE_WEAPON}}, false },
-    { "Content",      {{"Player Roles",PAGE_PLAYER_ROLES},{"Contact Description",PAGE_CONTACTS}}, false },
+    { "Content",      {{"Player Roles",PAGE_PLAYER_ROLES},{"Reload / Resupply Text",PAGE_RELOAD_RESUPPLY},{"Contact Description",PAGE_CONTACTS}}, false },
     { "Reference",    {{"Localization",PAGE_LOCALIZATION},{"Hex Converter",PAGE_HEX_CONVERTER}}, false },
     { "Utilities",    {{"ARMAS Scanner",PAGE_ARMAS}}, false },
     { "Application",  {{"Settings",PAGE_SETTINGS},{"Credits",PAGE_CREDITS}}, false },
@@ -50,7 +52,7 @@ static std::vector<NavGroup> s_nav = {
 static const char* pageCategory[PAGE_COUNT] = {
     "Colour Tools","Colour Tools",
     "Stats","Stats",
-    "Reference","Utilities","Content","Reference","Application","Content","Application",
+    "Reference","Utilities","Content","Reference","Application","Content","Content","Application",
     "Colour Tools"
 };
 static bool s_configLoaded = false;
@@ -103,8 +105,24 @@ static void jsonToColor(const json& value, float col[3]){
     }
 }
 
+static void jsonToSteppedColors(const json& value, float cols[6][3]){
+    if(!value.is_array()) return;
+    const int limit = std::min(6, (int)value.size());
+    for(int i = 0; i < limit; ++i)
+        jsonToColor(value[i], cols[i]);
+}
+
 static void writeColor(std::ostream& out, const float col[3]){
     out << "[" << col[0] << ", " << col[1] << ", " << col[2] << "]";
+}
+
+static void writeSteppedColors(std::ostream& out, const float cols[6][3]){
+    out << "[";
+    for(int i = 0; i < 6; ++i){
+        if(i) out << ", ";
+        writeColor(out, cols[i]);
+    }
+    out << "]";
 }
 
 static std::string themeNameForIndex(int idx){
@@ -134,6 +152,50 @@ static bool jsonBool(const json& obj, const char* key, bool def){
 static std::string jsonString(const json& obj, const char* key, const std::string& def = {}){
     const json& value = obj[key];
     return value.is_string() ? value.get<std::string>() : def;
+}
+
+static void writeReloadResupplyStyle(std::ostream& out,
+    const PageReloadResupplyText::TextStyleState& style, const char* indent){
+    out << "{\n";
+    out << indent << "  \"text\": \"" << jsonEscape(style.text) << "\",\n";
+    out << indent << "  \"font_idx\": " << style.fontIdx << ",\n";
+    out << indent << "  \"mode_idx\": " << style.modeIdx << ",\n";
+    out << indent << "  \"solid\": ";
+    writeColor(out, style.solid);
+    out << ",\n";
+    out << indent << "  \"stepped\": ";
+    writeSteppedColors(out, style.stepped);
+    out << ",\n";
+    out << indent << "  \"smooth_start\": ";
+    writeColor(out, style.smoothStart);
+    out << ",\n";
+    out << indent << "  \"smooth_end\": ";
+    writeColor(out, style.smoothEnd);
+    out << ",\n";
+    out << indent << "  \"triple_start\": ";
+    writeColor(out, style.tripleStart);
+    out << ",\n";
+    out << indent << "  \"triple_mid\": ";
+    writeColor(out, style.tripleMid);
+    out << ",\n";
+    out << indent << "  \"triple_end\": ";
+    writeColor(out, style.tripleEnd);
+    out << "\n" << indent << "}";
+}
+
+static void applyReloadResupplyStyleJson(const json& value,
+    PageReloadResupplyText::TextStyleState& style){
+    if(!value.is_object()) return;
+    copyString(style.text, sizeof(style.text), jsonString(value, "text", style.text));
+    style.fontIdx = std::max(0, jsonInt(value, "font_idx", style.fontIdx));
+    style.modeIdx = std::clamp(jsonInt(value, "mode_idx", style.modeIdx), 0, 3);
+    jsonToColor(value["solid"], style.solid);
+    jsonToSteppedColors(value["stepped"], style.stepped);
+    jsonToColor(value["smooth_start"], style.smoothStart);
+    jsonToColor(value["smooth_end"], style.smoothEnd);
+    jsonToColor(value["triple_start"], style.tripleStart);
+    jsonToColor(value["triple_mid"], style.tripleMid);
+    jsonToColor(value["triple_end"], style.tripleEnd);
 }
 
 static void writeColourScheme(std::ostream& out, const ColourSchemeWidget& colours, const char* indent){
@@ -281,6 +343,17 @@ static bool saveConfig(){
         out << "    \"gradient_end\": "; writeColor(out, s_playerRoles.gradEnd); out << "\n";
         out << "  },\n";
 
+        out << "  \"reload_resupply\": {\n";
+        out << "    \"ger_path\": \"" << jsonEscape(s_reloadResupply.gerPath) << "\",\n";
+        out << "    \"active_tab\": " << s_reloadResupply.activeTabIdx << ",\n";
+        out << "    \"reload\": ";
+        writeReloadResupplyStyle(out, s_reloadResupply.reload, "    ");
+        out << ",\n";
+        out << "    \"resupply\": ";
+        writeReloadResupplyStyle(out, s_reloadResupply.resupply, "    ");
+        out << "\n";
+        out << "  },\n";
+
         out << "  \"contacts\": {\n";
         out << "    \"int_path\": \"" << jsonEscape(s_contacts.intPath) << "\",\n";
         out << "    \"out_path\": \"" << jsonEscape(s_contacts.outPath) << "\",\n";
@@ -422,6 +495,16 @@ static void loadConfig(){
             }
         }
 
+        if(root.contains("reload_resupply") && root["reload_resupply"].is_object()){
+            const json& reloadResupply = root["reload_resupply"];
+            copyString(s_reloadResupply.gerPath, sizeof(s_reloadResupply.gerPath), jsonString(reloadResupply, "ger_path"));
+            s_reloadResupply.activeTabIdx = std::clamp(
+                jsonInt(reloadResupply, "active_tab", s_reloadResupply.activeTabIdx), 0, 1);
+            applyReloadResupplyStyleJson(reloadResupply["reload"], s_reloadResupply.reload);
+            applyReloadResupplyStyleJson(reloadResupply["resupply"], s_reloadResupply.resupply);
+            s_reloadResupply.autoLoadAttempted = true;
+        }
+
         if(root.contains("contacts") && root["contacts"].is_object()){
             const json& contacts = root["contacts"];
             copyString(s_contacts.intPath, sizeof(s_contacts.intPath), jsonString(contacts, "int_path"));
@@ -449,6 +532,7 @@ static void drawPage(){
         case PAGE_PLAYER_ROLES: s_playerRoles.draw();  break;
         case PAGE_HEX_CONVERTER:s_hexConverter.draw(); break;
         case PAGE_CREDITS:      s_credits.draw();      break;
+        case PAGE_RELOAD_RESUPPLY:s_reloadResupply.draw(); break;
         case PAGE_CONTACTS:     s_contacts.draw();     break;
         case PAGE_SETTINGS:     s_settings.draw();     break;
     }
@@ -463,6 +547,7 @@ static bool selectedToolIsRunning(){
         case PAGE_WEAPON:        return s_weapon.isActionRunning();
         case PAGE_ARMAS:         return s_armas.isActionRunning();
         case PAGE_PLAYER_ROLES:  return s_playerRoles.isActionRunning();
+        case PAGE_RELOAD_RESUPPLY:return s_reloadResupply.isActionRunning();
         case PAGE_CONTACTS:      return s_contacts.isActionRunning();
         default:                 return false;
     }
@@ -477,6 +562,7 @@ static bool selectedToolCanStart(){
         case PAGE_WEAPON:        return s_weapon.canStartAction();
         case PAGE_ARMAS:         return s_armas.canStartAction();
         case PAGE_PLAYER_ROLES:  return s_playerRoles.canStartAction();
+        case PAGE_RELOAD_RESUPPLY:return s_reloadResupply.canStartAction();
         case PAGE_CONTACTS:      return s_contacts.canStartAction();
         default:                 return false;
     }
@@ -495,6 +581,7 @@ static void startSelectedTool(){
         case PAGE_WEAPON:        s_weapon.startAction();   break;
         case PAGE_ARMAS:         s_armas.startAction();    break;
         case PAGE_PLAYER_ROLES:  s_playerRoles.startAction(); break;
+        case PAGE_RELOAD_RESUPPLY:s_reloadResupply.startAction(); break;
         case PAGE_CONTACTS:      s_contacts.startAction(); break;
         default: break;
     }

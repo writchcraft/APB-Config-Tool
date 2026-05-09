@@ -287,49 +287,70 @@ inline bool BrowseButton(const char* id="Browse"){
 }
 
 // Best-effort APB INT folder detection (Steam installs on C:/D:/etc).
+inline std::string DetectApbLocalizationDir(const char* languageFolder){
+    if(!languageFolder || !*languageFolder) return {};
+    namespace fs = std::filesystem;
+    std::vector<std::string> candidates;
+    auto add = [&](const std::string& p){
+        if(p.empty()) return;
+        if(std::find(candidates.begin(), candidates.end(), p) == candidates.end())
+            candidates.push_back(p);
+    };
+
+    const std::string lang = languageFolder;
+    const std::string installSuffix = "\\APBGame\\Localization\\" + lang;
+    auto addInstallRoot = [&](const std::string& installRoot){
+        add(installRoot + installSuffix);
+    };
+
+    // Explicit known Steam install roots first.
+    addInstallRoot("D:\\Steam\\steamapps\\common\\APB Reloaded");
+    addInstallRoot("C:\\Program Files (x86)\\Steam\\steamapps\\common\\APB Reloaded");
+    addInstallRoot("D:\\SteamLibrary\\steamapps\\common\\APB Reloaded");
+
+    if(const char* pf86 = std::getenv("ProgramFiles(x86)"))
+        addInstallRoot(std::string(pf86) + "\\Steam\\steamapps\\common\\APB Reloaded");
+    if(const char* pf   = std::getenv("ProgramFiles"))
+        addInstallRoot(std::string(pf) + "\\Steam\\steamapps\\common\\APB Reloaded");
+
+    for(char d='C'; d<='Z'; ++d){
+        char root[] = {d,':','\\','\0'};
+        if(GetDriveTypeA(root)==DRIVE_NO_ROOT_DIR) continue;
+        std::string r = root;
+        addInstallRoot(r + "Steam\\steamapps\\common\\APB Reloaded");
+        addInstallRoot(r + "SteamLibrary\\steamapps\\common\\APB Reloaded");
+        addInstallRoot(r + "Games\\Steam\\steamapps\\common\\APB Reloaded");
+        addInstallRoot(r + "Program Files (x86)\\Steam\\steamapps\\common\\APB Reloaded");
+        addInstallRoot(r + "Program Files\\Steam\\steamapps\\common\\APB Reloaded");
+    }
+
+    for(const auto& p : candidates){
+        std::error_code ec;
+        if(fs::exists(p,ec) && fs::is_directory(p,ec)) return p;
+    }
+    return {};
+}
+
 inline const std::string& DetectApbIntDir(){
     static const std::string cached = [](){
-        namespace fs = std::filesystem;
-        std::vector<std::string> candidates;
-        auto add = [&](const std::string& p){ if(!p.empty()) candidates.push_back(p); };
-
-        if(const char* pf86 = std::getenv("ProgramFiles(x86)"))
-            add(std::string(pf86) + "\\Steam\\steamapps\\common\\APB Reloaded\\APBGame\\Localization\\INT");
-        if(const char* pf   = std::getenv("ProgramFiles"))
-            add(std::string(pf) + "\\Steam\\steamapps\\common\\APB Reloaded\\APBGame\\Localization\\INT");
-
-        for(char d='C'; d<='Z'; ++d){
-            char root[] = {d,':','\\','\0'};
-            if(GetDriveTypeA(root)==DRIVE_NO_ROOT_DIR) continue;
-            std::string r = root;
-            add(r + "Steam\\steamapps\\common\\APB Reloaded\\APBGame\\Localization\\INT");
-            add(r + "SteamLibrary\\steamapps\\common\\APB Reloaded\\APBGame\\Localization\\INT");
-            add(r + "Games\\Steam\\steamapps\\common\\APB Reloaded\\APBGame\\Localization\\INT");
-            add(r + "Program Files (x86)\\Steam\\steamapps\\common\\APB Reloaded\\APBGame\\Localization\\INT");
-        }
-
-        for(const auto& p : candidates){
-            std::error_code ec;
-            if(fs::exists(p,ec) && fs::is_directory(p,ec)) return p;
-        }
-        return std::string{};
+        return DetectApbLocalizationDir("INT");
     }();
     return cached;
 }
 
-inline std::string DetectApbIntFile(const char* fileName){
+inline std::string DetectApbLocalizationFile(const char* languageFolder, const char* fileName){
     if(!fileName || !*fileName) return {};
-    namespace fs = std::filesystem;
-    const std::string& intDir = DetectApbIntDir();
-    if(intDir.empty()) return {};
+        namespace fs = std::filesystem;
+    const std::string dir = DetectApbLocalizationDir(languageFolder);
+    if(dir.empty()) return {};
 
-    fs::path exact = fs::path(intDir) / fileName;
+    fs::path exact = fs::path(dir) / fileName;
     std::error_code ec;
     if(fs::exists(exact, ec) && fs::is_regular_file(exact, ec))
         return exact.string();
 
     const std::string wanted = fileName;
-    for(const auto& entry : fs::directory_iterator(intDir, ec)){
+    for(const auto& entry : fs::directory_iterator(dir, ec)){
         if(ec) break;
         if(!entry.is_regular_file(ec)) continue;
         const std::string name = entry.path().filename().string();
@@ -337,6 +358,10 @@ inline std::string DetectApbIntFile(const char* fileName){
             return entry.path().string();
     }
     return {};
+}
+
+inline std::string DetectApbIntFile(const char* fileName){
+    return DetectApbLocalizationFile("INT", fileName);
 }
 
 // File browse dialogs
@@ -397,4 +422,9 @@ inline std::string DownloadsDir(){
 }
 inline void OpenInExplorer(const std::string& path){
     ShellExecuteA(nullptr,"open",path.c_str(),nullptr,nullptr,SW_SHOWNORMAL);
+}
+
+namespace apb::gui {
+// Preview font resolution for APB font tags embedded in the executable resources.
+ImFont* ResolvePreviewFont(const char* apbFontTag, float* outPixelSize = nullptr);
 }

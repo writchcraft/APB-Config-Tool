@@ -34,6 +34,8 @@ BEGIN
 END
 
 IDR_FONT_BENTONSANS_REGULAR RCDATA "..\\Assets\\fonts\\BentonSans-Regular.ttf"
+IDR_FONT_HELVETICA_BOLD     RCDATA "..\\Assets\\fonts\\Helvetica Bold.ttf"
+IDR_FONT_HELVETICA_REGULAR  RCDATA "..\\Assets\\fonts\\Helvetica Regular.otf"
 
 IDR_IMG_VEHICLE_COYWOLF  RCDATA "..\\Assets\\Images_VehicleItemTypes\\coywolf.png"
 IDR_IMG_VEHICLE_MIRAGE   RCDATA "..\\Assets\\Images_VehicleItemTypes\\mirage.png"
