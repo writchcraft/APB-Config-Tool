@@ -34,6 +34,7 @@ struct GunTypeColourSettings {
     std::string categoryToken;
     std::string fullKey;
     bool enabled=false;
+    std::string fontTag = "None";
     ColourMode mode=ColourMode::SOLID;
     RGB solid{1,1,1};
     std::vector<RGB> stepped;
@@ -56,7 +57,6 @@ struct ColourResult {
 ColourResult applyColourToGerFile(
     const std::string& inputPath,
     const std::vector<GunTypeColourSettings>& settings,
-    const std::string& fontTag="None",
     const std::vector<std::string>& ignoredKeys={},
     std::function<void(const std::string&)> log=nullptr,
     const std::atomic<bool>* cancelFlag=nullptr);

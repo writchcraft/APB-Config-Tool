@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cstring>
 #include <map>
+#include <filesystem>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -15,6 +16,7 @@ namespace apb::gui {
 struct PageWeaponColour {
     struct ColourRuleState {
         bool enabled = false;
+        int fontIdx = 0;
         int modeIdx = 2; // 0=SOLID, 1=Stepped, 2=Smooth, 3=Triple Gradient
         float solid[3] = {1.f,1.f,1.f};
         float stepped[6][3] = {
@@ -41,7 +43,7 @@ struct PageWeaponColour {
     char filePath[MAX_PATH] = {};
     char inventoryIntPath[MAX_PATH] = {};
     char weaponSearch[256] = {};
-    int fontIdx = 0;
+    int fontIdx = 0; // legacy shared default for config migration and new rule defaults
     int specificSortIdx = 1;
     int specificCategoryFilterIdx = 0;
     int modeIdx = 2; // legacy config compatibility
@@ -84,8 +86,10 @@ struct PageWeaponColour {
         categories.resize(gunTypes.size());
         if(!categories.empty())
             categories[0].enabled = true;
-        for(auto& st : categories)
+        for(auto& st : categories){
             applyDefaultPalette(st);
+            st.fontIdx = fontIdx;
+        }
 
         autoDetectDefaultPaths();
     }
@@ -114,6 +118,14 @@ struct PageWeaponColour {
     static bool matchesSearch(const SpecificWeaponState& st, const char* filter){
         if(!filter || !*filter) return true;
         return st.searchText.find(lowerCopy(filter)) != std::string::npos;
+    }
+
+    std::string computedOutputPath() const{
+        if(!filePath[0]) return {};
+        namespace fs = std::filesystem;
+        fs::path input(filePath);
+        if(input.empty()) return {};
+        return (input.parent_path() / "Output" / input.filename()).string();
     }
 
     int categoryOrder(const std::string& categoryToken) const{
@@ -195,6 +207,35 @@ struct PageWeaponColour {
                 if(ImGui::Selectable(MODES[m], st.modeIdx == m))
                     st.modeIdx = m;
                 if(st.modeIdx == m) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+    }
+
+    const char* fontLabel(int idx) const{
+        if(fonts.empty())
+            return "None";
+        idx = std::clamp(idx, 0, (int)fonts.size() - 1);
+        return fonts[idx].c_str();
+    }
+
+    void drawFontCombo(const char* id, int& selectedFontIdx){
+        ImGui::SetNextItemWidth(-1.f);
+        if(fonts.empty()){
+            ImGui::BeginDisabled();
+            char noneBuf[] = "None";
+            ImGui::InputText(id, noneBuf, sizeof(noneBuf), ImGuiInputTextFlags_ReadOnly);
+            ImGui::EndDisabled();
+            return;
+        }
+
+        selectedFontIdx = std::clamp(selectedFontIdx, 0, (int)fonts.size() - 1);
+        const char* preview = fonts[selectedFontIdx].c_str();
+        if(ImGui::BeginCombo(id, preview)){
+            for(int i = 0; i < (int)fonts.size(); ++i){
+                if(ImGui::Selectable(fonts[i].c_str(), selectedFontIdx == i))
+                    selectedFontIdx = i;
+                if(selectedFontIdx == i) ImGui::SetItemDefaultFocus();
             }
             ImGui::EndCombo();
         }
@@ -296,6 +337,7 @@ struct PageWeaponColour {
                     st = it->second;
                 } else {
                     applyDefaultPalette(st);
+                    st.fontIdx = fontIdx;
                 }
 
                 st.fullKey = item.fullKey;
@@ -393,13 +435,14 @@ struct PageWeaponColour {
 
         ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::ITEM_BG);
         ImGui::BeginChild("##wcCategoriesPanel", {0.f, 404.f}, true);
-        if(ImGui::BeginTable("##wcCategoriesSimple", 3,
+        if(ImGui::BeginTable("##wcCategoriesSimple", 4,
             ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings | ImGuiTableFlags_ScrollY,
             {-1.f, 0.f}))
         {
             ImGui::TableSetupColumn("Category", ImGuiTableColumnFlags_WidthFixed, 210.f);
             ImGui::TableSetupColumn("Mode", ImGuiTableColumnFlags_WidthFixed, 160.f);
             ImGui::TableSetupColumn("Colours", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Font", ImGuiTableColumnFlags_WidthFixed, 210.f);
 
             for(int i = 0; i < (int)gunTypes.size(); ++i){
                 auto& st = categories[i];
@@ -423,6 +466,9 @@ struct PageWeaponColour {
                 ImGui::TableSetColumnIndex(2);
                 drawColourControls("category", i, st);
 
+                ImGui::TableSetColumnIndex(3);
+                drawFontCombo("##font", st.fontIdx);
+
                 ImGui::PopID();
             }
 
@@ -435,28 +481,40 @@ struct PageWeaponColour {
     void drawFileSettingsSection(){
         SectionLabel("File Settings");
         ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::ITEM_BG);
-        ImGui::BeginChild("##wcFileConfig", {0.f, 78.f}, true);
+        ImGui::BeginChild("##wcFileConfig", {0.f, 128.f}, true);
         if(BeginSectionTable("##wcFileGrid", 92.f, 78.f)){
-            BeginSectionRow("GER File");
+            BeginSectionRow("Style");
+            ImGui::TextColored(Col::SUBTEXT, "Fonts are set per rule, next to each colour row.");
+            EndSectionTable();
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        if(BeginSectionTable("##wcFileInventoryGrid", 126.f, 86.f)){
+            BeginSectionRow("InventoryItemTypes");
             ImGui::SetNextItemWidth(-FLT_MIN);
-            ImGui::InputText("##wcpath", filePath, sizeof(filePath));
+            ImGui::InputText("##wcInventoryMain", inventoryIntPath, sizeof(inventoryIntPath));
             NextSectionAction();
-            if(ImGui::Button("Browse##wc")){
+            if(ImGui::Button("Browse##wcInventoryMain")){
                 std::string s;
-                if(BrowseFile(s,"GER Files\0*.ger;*.GER\0All Files\0*.*\0\0"))
-                    std::snprintf(filePath, sizeof(filePath), "%s", s.c_str());
+                if(BrowseFile(s, "INT Files\0*.int;*.INT\0All Files\0*.*\0\0"))
+                    std::snprintf(inventoryIntPath, sizeof(inventoryIntPath), "%s", s.c_str());
             }
 
-            BeginSectionRow("Font");
-            ImGui::SetNextItemWidth(360.f);
-            if(fontIdx < 0 || fontIdx >= (int)fonts.size()) fontIdx = 0;
-            if(ImGui::BeginCombo("##wcfont", fonts.empty() ? "None" : fonts[fontIdx].c_str())){
-                for(int i = 0; i < (int)fonts.size(); ++i){
-                    if(ImGui::Selectable(fonts[i].c_str(), fontIdx == i)) fontIdx = i;
-                    if(fontIdx == i) ImGui::SetItemDefaultFocus();
-                }
-                ImGui::EndCombo();
-            }
+            BeginSectionRow("Output");
+            char outputPathBuf[MAX_PATH * 2] = {};
+            const std::string outputPath = computedOutputPath();
+            if(!outputPath.empty())
+                std::snprintf(outputPathBuf, sizeof(outputPathBuf), "%s", outputPath.c_str());
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputText("##wcOutputMain", outputPathBuf, sizeof(outputPathBuf), ImGuiInputTextFlags_ReadOnly);
+            NextSectionAction();
+            if(outputPath.empty()) ImGui::BeginDisabled();
+            if(ImGui::Button("Open##wcOutputMain"))
+                OpenInExplorer(outputPath);
+            if(outputPath.empty()) ImGui::EndDisabled();
             EndSectionTable();
         }
         ImGui::EndChild();
@@ -474,7 +532,50 @@ struct PageWeaponColour {
         }
     }
 
-    void drawRunAndLogSections(){
+    void drawOutputSection(){
+        SectionLabel("Output");
+        char outputPathBuf[MAX_PATH * 2] = {};
+        const std::string outputPath = computedOutputPath();
+        if(!outputPath.empty())
+            std::snprintf(outputPathBuf, sizeof(outputPathBuf), "%s", outputPath.c_str());
+
+        if(BeginSectionTable("##wcOutputGrid", 92.f, 86.f)){
+            BeginSectionRow("Output");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputText("##wcoutpath", outputPathBuf, sizeof(outputPathBuf), ImGuiInputTextFlags_ReadOnly);
+            NextSectionAction();
+            if(outputPath.empty()) ImGui::BeginDisabled();
+            if(ImGui::Button("Open##wcout"))
+                OpenInExplorer(outputPath);
+            if(outputPath.empty()) ImGui::EndDisabled();
+            EndSectionTable();
+        }
+        if(outputPath.empty())
+            ImGui::TextColored(Col::SUBTEXT, "Select a GER file to resolve the output path.");
+        else
+            ImGui::TextColored(Col::SUBTEXT, "Generated file is written beside the source file in its Output folder.");
+    }
+
+    void drawInlineOutputRow(const char* tableId, const char* inputId, const char* buttonId){
+        char outputPathBuf[MAX_PATH * 2] = {};
+        const std::string outputPath = computedOutputPath();
+        if(!outputPath.empty())
+            std::snprintf(outputPathBuf, sizeof(outputPathBuf), "%s", outputPath.c_str());
+
+        if(BeginSectionTable(tableId, 126.f, 86.f)){
+            BeginSectionRow("Output");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputText(inputId, outputPathBuf, sizeof(outputPathBuf), ImGuiInputTextFlags_ReadOnly);
+            NextSectionAction();
+            if(outputPath.empty()) ImGui::BeginDisabled();
+            if(ImGui::Button(buttonId))
+                OpenInExplorer(outputPath);
+            if(outputPath.empty()) ImGui::EndDisabled();
+            EndSectionTable();
+        }
+    }
+
+    void drawRunAndLogSections(bool includeLog = true){
         SectionLabel("Run");
         bool busy = running.load();
         if(busy) ImGui::BeginDisabled();
@@ -483,6 +584,9 @@ struct PageWeaponColour {
         ImGui::SameLine();
         if(!lastOut.empty() && ImGui::Button("Open Output", {110,32})) OpenInExplorer(lastOut);
         if(busy){ ImGui::SameLine(); ImGui::TextColored(Col::YELLOW, "Running..."); }
+
+        if(!includeLog)
+            return;
 
         SectionLabel("Log");
         std::string logText = log.get();
@@ -495,6 +599,7 @@ struct PageWeaponColour {
         GunTypeColourSettings out;
         out.categoryToken = def.categoryToken;
         out.enabled = st.enabled;
+        out.fontTag = fontLabel(st.fontIdx);
         out.mode = modeFromIndex(st.modeIdx);
         out.solid = rgbFromFloats(st.solid);
         out.smoothStart = rgbFromFloats(st.smoothStart);
@@ -513,6 +618,7 @@ struct PageWeaponColour {
         out.categoryToken = st.categoryToken;
         out.fullKey = st.fullKey;
         out.enabled = st.enabled;
+        out.fontTag = fontLabel(st.fontIdx);
         out.mode = modeFromIndex(st.modeIdx);
         out.solid = rgbFromFloats(st.solid);
         out.smoothStart = rgbFromFloats(st.smoothStart);
@@ -557,7 +663,7 @@ struct PageWeaponColour {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::ITEM_BG);
         ImGui::BeginChild("##wcSpecificConfig", {0.f, 128.f}, true);
 
-        ImGui::Text("Inventory INT:"); ImGui::SameLine();
+        ImGui::Text("InventoryItemTypes:"); ImGui::SameLine();
         ImGui::SetNextItemWidth(-156.f);
         ImGui::InputText("##wcInventoryInt", inventoryIntPath, sizeof(inventoryIntPath));
         ImGui::SameLine();
@@ -631,14 +737,16 @@ struct PageWeaponColour {
             if(isSpecificVisible(st)) ++visibleCount;
         ImGui::TextColored(Col::SUBTEXT, "%d weapons loaded, %d visible.", (int)specificWeapons.size(), visibleCount);
 
-        if(ImGui::BeginTable("##wcSpecificWeapons", 4,
+        const float listHeight = filePath[0] ? 520.f : 560.f;
+        if(ImGui::BeginTable("##wcSpecificWeapons", 5,
             ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY,
-            {-1.f, 320.f}))
+            {-1.f, listHeight}))
         {
             ImGui::TableSetupColumn("Apply", ImGuiTableColumnFlags_WidthFixed, 52.f);
             ImGui::TableSetupColumn("Weapon", ImGuiTableColumnFlags_WidthFixed, 340.f);
             ImGui::TableSetupColumn("Mode", ImGuiTableColumnFlags_WidthFixed, 150.f);
             ImGui::TableSetupColumn("Colours", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Font", ImGuiTableColumnFlags_WidthFixed, 210.f);
             ImGui::TableHeadersRow();
 
             for(int i = 0; i < (int)specificWeapons.size(); ++i){
@@ -664,6 +772,124 @@ struct PageWeaponColour {
                 ImGui::TableSetColumnIndex(3);
                 drawColourControls("specific", i, st);
 
+                ImGui::TableSetColumnIndex(4);
+                drawFontCombo("##font", st.fontIdx);
+
+                ImGui::PopID();
+            }
+
+            ImGui::EndTable();
+        }
+    }
+
+    void drawSpecificOverridesMergedSection(){
+        SectionLabel("Specific Weapon Overrides");
+        SectionNote("Use this only when one weapon needs to break away from its category rule.");
+
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::ITEM_BG);
+        ImGui::BeginChild("##wcSpecificMergedConfig", {0.f, 118.f}, true);
+
+        ImGui::Text("InventoryItemTypes:"); ImGui::SameLine();
+        ImGui::SetNextItemWidth(-156.f);
+        ImGui::InputText("##wcInventoryIntMerged", inventoryIntPath, sizeof(inventoryIntPath));
+        ImGui::SameLine();
+        if(ImGui::Button("Browse##wcInventoryIntMerged")){
+            std::string s;
+            if(BrowseFile(s, "INT Files\0*.int;*.INT\0All Files\0*.*\0\0"))
+                std::snprintf(inventoryIntPath, sizeof(inventoryIntPath), "%s", s.c_str());
+        }
+        ImGui::SameLine();
+        if(ImGui::Button("Scan##wcInventoryIntMerged"))
+            scanSpecificWeapons();
+
+        drawInlineOutputRow("##wcSpecificOutputGrid", "##wcSpecificOutputPath", "Open##wcSpecificOutput");
+
+        ImGui::TextColored(Col::SUBTEXT, "%s", inventoryScanStatus.c_str());
+        ImGui::TextColored(Col::SUBTEXT, "Specific weapon rules override category rules when both match.");
+
+        ImGui::Text("Search:"); ImGui::SameLine();
+        ImGui::SetNextItemWidth(200.f);
+        ImGui::InputText("##wcWeaponSearchMerged", weaponSearch, sizeof(weaponSearch));
+        ImGui::SameLine();
+        ImGui::Text("Class:"); ImGui::SameLine();
+        ImGui::SetNextItemWidth(160.f);
+        if(ImGui::BeginCombo("##wcSpecificClassMerged", categoryFilterLabel(specificCategoryFilterIdx))){
+            if(ImGui::Selectable("All Classes", specificCategoryFilterIdx == 0))
+                specificCategoryFilterIdx = 0;
+            if(specificCategoryFilterIdx == 0) ImGui::SetItemDefaultFocus();
+            for(int i = 0; i < (int)gunTypes.size(); ++i){
+                const bool selected = (specificCategoryFilterIdx == i + 1);
+                if(ImGui::Selectable(gunTypes[i].label.c_str(), selected))
+                    specificCategoryFilterIdx = i + 1;
+                if(selected) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::SameLine();
+        ImGui::Text("Sort:"); ImGui::SameLine();
+        ImGui::SetNextItemWidth(170.f);
+        if(ImGui::BeginCombo("##wcSpecificSortMerged", SPECIFIC_SORTS[specificSortIdx])){
+            for(int i = 0; i < 2; ++i){
+                if(ImGui::Selectable(SPECIFIC_SORTS[i], specificSortIdx == i)){
+                    specificSortIdx = i;
+                    sortSpecificWeapons();
+                }
+                if(specificSortIdx == i) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+
+        if(specificWeapons.empty()){
+            ImGui::TextColored(Col::SUBTEXT, "No specific weapon list loaded.");
+            return;
+        }
+
+        int visibleCount = 0;
+        for(const auto& st : specificWeapons)
+            if(isSpecificVisible(st)) ++visibleCount;
+        ImGui::TextColored(Col::SUBTEXT, "%d weapons loaded, %d visible.", (int)specificWeapons.size(), visibleCount);
+
+        const float listHeight = filePath[0] ? 520.f : 560.f;
+        if(ImGui::BeginTable("##wcSpecificWeaponsMerged", 5,
+            ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY,
+            {-1.f, listHeight}))
+        {
+            ImGui::TableSetupColumn("Apply", ImGuiTableColumnFlags_WidthFixed, 52.f);
+            ImGui::TableSetupColumn("Weapon", ImGuiTableColumnFlags_WidthFixed, 340.f);
+            ImGui::TableSetupColumn("Mode", ImGuiTableColumnFlags_WidthFixed, 150.f);
+            ImGui::TableSetupColumn("Colours", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Font", ImGuiTableColumnFlags_WidthFixed, 210.f);
+            ImGui::TableHeadersRow();
+
+            for(int i = 0; i < (int)specificWeapons.size(); ++i){
+                auto& st = specificWeapons[i];
+                if(!isSpecificVisible(st))
+                    continue;
+
+                ImGui::PushID(i);
+                ImGui::TableNextRow();
+
+                ImGui::TableSetColumnIndex(0);
+                ImGui::Checkbox("##enabled", &st.enabled);
+
+                ImGui::TableSetColumnIndex(1);
+                ImGui::TextUnformatted(st.displayName.c_str());
+                ImGui::TextColored(Col::SUBTEXT, "%s", st.categoryToken.c_str());
+                if(ImGui::IsItemHovered())
+                    ImGui::SetTooltip("%s", st.fullKey.c_str());
+
+                ImGui::TableSetColumnIndex(2);
+                drawModeCombo("##mode", st);
+
+                ImGui::TableSetColumnIndex(3);
+                drawColourControls("specific", i, st);
+
+                ImGui::TableSetColumnIndex(4);
+                drawFontCombo("##font", st.fontIdx);
+
                 ImGui::PopID();
             }
 
@@ -684,7 +910,7 @@ struct PageWeaponColour {
 
         ImGui::BeginChild("##wc",{0,0},false);
         SectionLabel("Weapon Colour - InventoryItemTypes.GER");
-        SectionNote("Set the file, choose a font, build your category colours here, then use Specific Weapon Overrides only when individual weapons need exceptions.");
+        SectionNote("Build your category colours here, then use Specific Weapon Overrides only when individual weapons need exceptions.");
 
         drawFileSettingsSection();
 
@@ -708,11 +934,11 @@ struct PageWeaponColour {
 
         ImGui::BeginChild("##wcSpecificPage",{0,0},false);
         SectionLabel("Specific Weapon Overrides - InventoryItemTypes.GER");
-        SectionNote("This tool shares the same GER file, font, and run output as Weapon Colour. Use it for one-off weapon exceptions.");
+        SectionNote("This tool shares the same target file and run output as Weapon Colour. Use it for one-off weapon exceptions.");
 
-        drawFileSettingsSection();
-        drawSpecificWeaponsSection();
-        drawRunAndLogSections();
+        drawSpecificOverridesMergedSection();
+        drawOutputSection();
+        drawRunAndLogSections(false);
         ImGui::EndChild();
     }
 
@@ -740,12 +966,11 @@ struct PageWeaponColour {
         lastOut.clear();
 
         std::string path = filePath;
-        std::string font = (fontIdx >= 0 && fontIdx < (int)fonts.size()) ? fonts[fontIdx] : "None";
         std::vector<std::string> ignored = ignoredKeys();
 
-        std::thread([this,path,settings,font,ignored](){
+        std::thread([this,path,settings,ignored](){
             try{
-                auto r = applyColourToGerFile(path, settings, font, ignored,
+                auto r = applyColourToGerFile(path, settings, ignored,
                     [this](const std::string& s){ log.append(s); },
                     &cancelRequested);
                 if(r.cancelled || cancelRequested.load()){

@@ -250,7 +250,7 @@ static bool saveConfig(){
         out << "  \"weapon_item_types\": {\n";
         out << "    \"int_path\": \"" << jsonEscape(s_weapon.intPath) << "\",\n";
         out << "    \"out_path\": \"" << jsonEscape(s_weapon.outPath) << "\",\n";
-        out << "    \"workers\": " << s_weapon.workers << ",\n";
+        out << "    \"workers\": " << 8 << ",\n";
         out << "    \"colours\": ";
         writeColourScheme(out, s_weapon.colours, "    ");
         out << "\n  },\n";
@@ -258,7 +258,7 @@ static bool saveConfig(){
         out << "  \"vehicle_item_types\": {\n";
         out << "    \"int_path\": \"" << jsonEscape(s_vehicle.intPath) << "\",\n";
         out << "    \"out_path\": \"" << jsonEscape(s_vehicle.outPath) << "\",\n";
-        out << "    \"workers\": " << s_vehicle.workers << ",\n";
+        out << "    \"workers\": " << 8 << ",\n";
         out << "    \"colours\": ";
         writeColourScheme(out, s_vehicle.colours, "    ");
         out << "\n  },\n";
@@ -357,8 +357,13 @@ static void loadConfig(){
                 jsonString(wc, "inventory_int_path"));
             s_wcolour.inventoryScanPending = s_wcolour.inventoryIntPath[0] != '\0';
             s_wcolour.modeIdx = std::clamp(jsonInt(wc, "mode_idx", s_wcolour.modeIdx), 0, 1);
-            if(!s_wcolour.fonts.empty())
+            if(!s_wcolour.fonts.empty()){
                 s_wcolour.fontIdx = std::clamp(jsonInt(wc, "font_idx", s_wcolour.fontIdx), 0, (int)s_wcolour.fonts.size() - 1);
+                for(auto& st : s_wcolour.categories)
+                    st.fontIdx = s_wcolour.fontIdx;
+                for(auto& st : s_wcolour.specificWeapons)
+                    st.fontIdx = s_wcolour.fontIdx;
+            }
             jsonToColor(wc["single"], s_wcolour.singleCol);
             jsonToColor(wc["gradient_start"], s_wcolour.gradStart);
             jsonToColor(wc["gradient_end"], s_wcolour.gradEnd);
@@ -382,7 +387,6 @@ static void loadConfig(){
             const json& wit = root["weapon_item_types"];
             copyString(s_weapon.intPath, sizeof(s_weapon.intPath), jsonString(wit, "int_path"));
             copyString(s_weapon.outPath, sizeof(s_weapon.outPath), jsonString(wit, "out_path"));
-            s_weapon.workers = std::clamp(jsonInt(wit, "workers", s_weapon.workers), 1, 64);
             applyColourSchemeJson(wit["colours"], s_weapon.colours, false);
         }
 
@@ -390,7 +394,6 @@ static void loadConfig(){
             const json& vit = root["vehicle_item_types"];
             copyString(s_vehicle.intPath, sizeof(s_vehicle.intPath), jsonString(vit, "int_path"));
             copyString(s_vehicle.outPath, sizeof(s_vehicle.outPath), jsonString(vit, "out_path"));
-            s_vehicle.workers = std::clamp(jsonInt(vit, "workers", s_vehicle.workers), 1, 64);
             applyColourSchemeJson(vit["colours"], s_vehicle.colours);
         }
 

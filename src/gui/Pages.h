@@ -901,7 +901,6 @@ struct PageContactDescription {
 // ══════════════════════════════════════════════════════════════════════════
 struct PageWeaponItemTypes {
     char   intPath[MAX_PATH]={}, outPath[MAX_PATH]={};
-    int    workers=8;
     Progress prog;
     ThreadLog log;
     std::atomic<bool> running{false};
@@ -973,7 +972,7 @@ struct PageWeaponItemTypes {
         lastOut.clear();
         prog.reset(0);
         std::string ip=intPath,od=outPath;
-        int wk=workers;
+        constexpr int wk=8;
         Scheme sc; RGB si,gs,ge; colours.getScheme(sc,si,gs,ge);
         std::thread([this,ip,od,sc,si,gs,ge,wk](){
             try{
@@ -1032,15 +1031,6 @@ struct PageWeaponItemTypes {
             EndSectionTable();
         }
         SectionNote("Leave Output Folder blank to write the generated file to Downloads.");
-
-        SectionLabel("Generation");
-        if(BeginSectionTable("##witgen", 116.f, 86.f)){
-            BeginSectionRow("Workers");
-            ImGui::SetNextItemWidth(100.f);
-            ImGui::InputInt("##witwk",&workers);
-            workers=std::max(1,std::min(64,workers));
-            EndSectionTable();
-        }
 
         SectionLabel("Appearance");
         bool colChanged=false;
@@ -1131,7 +1121,6 @@ struct PageWeaponItemTypes {
 // ══════════════════════════════════════════════════════════════════════════
 struct PageVehicleItemTypes {
     char   intPath[MAX_PATH]={}, outPath[MAX_PATH]={};
-    int    workers=8;
     Progress prog;
     ThreadLog log;
     std::atomic<bool> running{false};
@@ -1202,7 +1191,7 @@ struct PageVehicleItemTypes {
         lastOut.clear();
         prog.reset(0);
         std::string ip=intPath,od=outPath;
-        int wk=workers;
+        constexpr int wk=8;
         Scheme sc; RGB si,gs,ge; colours.getScheme(sc,si,gs,ge);
         std::thread([this,ip,od,sc,si,gs,ge,wk](){
             try{
@@ -1261,15 +1250,6 @@ struct PageVehicleItemTypes {
             EndSectionTable();
         }
         SectionNote("Leave Output Folder blank to write the generated file to Downloads.");
-
-        SectionLabel("Generation");
-        if(BeginSectionTable("##vitgen", 116.f, 86.f)){
-            BeginSectionRow("Workers");
-            ImGui::SetNextItemWidth(100.f);
-            ImGui::InputInt("##vitwk",&workers);
-            workers=std::max(1,std::min(64,workers));
-            EndSectionTable();
-        }
 
         SectionLabel("Appearance");
         bool colChanged=false;

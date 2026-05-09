@@ -220,7 +220,6 @@ std::vector<WeaponInventoryEntry> scanInventoryWeapons(const std::string& inputP
 ColourResult applyColourToGerFile(
     const std::string& inputPath,
     const std::vector<GunTypeColourSettings>& settings,
-    const std::string& fontTag,
     const std::vector<std::string>& ignoredKeys,
     std::function<void(const std::string&)> log,
     const std::atomic<bool>* cancelFlag)
@@ -298,7 +297,8 @@ ColourResult applyColourToGerFile(
             std::string coloured=applyMode(plain,*selected);
 
             std::string prefix;
-            if(fontTag!="None"&&!fontTag.empty()) prefix="<Fonts:"+fontTag+">";
+            if(selected->fontTag != "None" && !selected->fontTag.empty())
+                prefix = "<Fonts:" + selected->fontTag + ">";
             out+=fullKey+"="+prefix+coloured+"\n";
             res.newlyColoured++;
             if(log) log("Coloured: "+fullKey);
