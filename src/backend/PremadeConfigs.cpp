@@ -396,6 +396,7 @@ static void inspectEditableColourTags(
 
     for(std::sregex_iterator it(utf8Text.begin(), utf8Text.end(), openRgbTag), end; it != end; ++it){
         const std::string value = normaliseTagValue((*it)[1].str());
+        { float r, g, b; if(std::sscanf(value.c_str(), "R=%f G=%f B=%f", &r, &g, &b) != 3) continue; }
         const std::string key = "rgb:" + value;
         auto& acc = editableValues[key];
         if(acc.value.kind.empty()){
