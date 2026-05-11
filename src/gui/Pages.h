@@ -16,8 +16,10 @@
 #include <d3d11.h>
 #include <fstream>
 #include <filesystem>
+#include <array>
 #include <cmath>
 #include <iomanip>
+#include <map>
 #include <regex>
 
 // D3D device from main.cpp
@@ -2828,12 +2830,19 @@ struct PageSettings {
         if(ImGui::Button("Refresh Premade Scan", {150.f, 0.f}))
             applyPremadeConfigDir();
 
-        const auto& summaries = premadeConfigSummaries();
+        const auto summaries = premadeConfigSummaries();
         int totalFiles = 0;
         for(const auto& summary : summaries)
             totalFiles += summary.fileCount;
         ImGui::TextColored(Col::SUBTEXT, "Resolved folder: %s", premadeConfigLocation().c_str());
-        ImGui::TextColored(Col::SUBTEXT, "Detected %d templates across %d files.", (int)summaries.size(), totalFiles);
+        if(isPremadeCacheBuilding()){
+            int done, total;
+            premadeCacheBuildProgress(done, total);
+            const float frac = (total > 0) ? (float)done / (float)total : 0.f;
+            ImGui::ProgressBar(frac, {-1.f, 0.f}, "Scanning...");
+        } else {
+            ImGui::TextColored(Col::SUBTEXT, "Detected %d templates across %d files.", (int)summaries.size(), totalFiles);
+        }
 
         ImGui::EndChild();
     }
@@ -2850,6 +2859,10 @@ struct PagePremadeConfigs {
     std::atomic<bool> cancelRequested{false};
     std::string lastOutputDir;
     bool outputSeeded = false;
+
+    int lastEditableTemplateIdx = -1;
+    std::map<std::string, std::string>         namedOverrides;
+    std::map<std::string, std::array<float,3>> rgbOverrides;
 
     bool isActionRunning() const { return running.load(); }
 
@@ -2919,8 +2932,56 @@ struct PagePremadeConfigs {
         }).detach();
     }
 
+    static ImVec4 namedTagColor(const std::string& name){
+        if(name == "White")                          return {1.f,   1.f,   1.f,   1.f};
+        if(name == "Black")                          return {0.05f, 0.05f, 0.05f, 1.f};
+        if(name == "Red"  || name == "Red_Criminal") return {1.f,   0.18f, 0.18f, 1.f};
+        if(name == "Blue")                           return {0.22f, 0.44f, 1.f,   1.f};
+        if(name == "Blue_Enforcer")                  return {0.3f,  0.55f, 1.f,   1.f};
+        if(name == "Green")                          return {0.18f, 1.f,   0.18f, 1.f};
+        if(name == "Yellow")                         return {1.f,   1.f,   0.f,   1.f};
+        if(name == "Purple")                         return {0.6f,  0.f,   1.f,   1.f};
+        if(name == "Purple_Bright")                  return {0.8f,  0.2f,  1.f,   1.f};
+        if(name == "Purple_Dark")                    return {0.4f,  0.f,   0.6f,  1.f};
+        if(name == "Pink")                           return {1.f,   0.45f, 0.75f, 1.f};
+        if(name == "Hot_Pink")                       return {1.f,   0.1f,  0.55f, 1.f};
+        if(name == "Valentine_Pink")                 return {1.f,   0.6f,  0.8f,  1.f};
+        if(name == "Grey_Dark")                      return {0.4f,  0.4f,  0.4f,  1.f};
+        if(name == "Action_Enemy")                   return {1.f,   0.3f,  0.1f,  1.f};
+        if(name == "Action_Enemy_Assist")            return {1.f,   0.55f, 0.3f,  1.f};
+        if(name == "Action_Team")                    return {0.2f,  0.75f, 1.f,   1.f};
+        if(name == "Action_Team_Assist")             return {0.4f,  0.85f, 1.f,   1.f};
+        if(name == "Chat_Dev")                       return {1.f,   0.78f, 0.f,   1.f};
+        if(name == "Ceremony_Highlight")             return {1.f,   0.85f, 0.35f, 1.f};
+        if(name == "Halloween_Necrocite")            return {0.35f, 1.f,   0.35f, 1.f};
+        if(name == "openworld_marker")               return {0.f,   1.f,   0.5f,  1.f};
+        if(name == "GroupHUD_OutOfDistrict")         return {0.7f,  0.7f,  0.1f,  1.f};
+        if(name == "ScoreBreakdown_NegativeValue")   return {1.f,   0.3f,  0.3f,  1.f};
+        if(name == "StageText")                      return {1.f,   1.f,   0.8f,  1.f};
+        if(name == "Tutorial_KeyPress")              return {1.f,   0.85f, 0.15f, 1.f};
+        return {0.5f, 0.5f, 0.5f, 1.f};
+    }
+
+    static bool parseRgbValue(const std::string& value, float rgb[3]){
+        float r = 0.5f, g = 0.5f, b = 0.5f;
+        if(std::sscanf(value.c_str(), "R=%f G=%f B=%f", &r, &g, &b) == 3){
+            rgb[0] = std::clamp(r, 0.f, 1.f);
+            rgb[1] = std::clamp(g, 0.f, 1.f);
+            rgb[2] = std::clamp(b, 0.f, 1.f);
+            return true;
+        }
+        rgb[0] = 0.5f; rgb[1] = 0.5f; rgb[2] = 0.5f;
+        return false;
+    }
+
     void draw(){
         seedDefaultOutput();
+
+        if(templateIdx != lastEditableTemplateIdx){
+            lastEditableTemplateIdx = templateIdx;
+            namedOverrides.clear();
+            rgbOverrides.clear();
+        }
 
         const auto& summaries = premadeConfigSummaries();
         if(!summaries.empty())
@@ -2928,9 +2989,18 @@ struct PagePremadeConfigs {
         else
             templateIdx = 0;
 
+        // Collect every unique Named tag value across all scanned templates
+        std::vector<std::string> allNamedTags;
+        for(const auto& s : summaries)
+            for(const auto& v : s.editableValues)
+                if(v.kind == "Named")
+                    allNamedTags.push_back(v.value);
+        std::sort(allNamedTags.begin(), allNamedTags.end());
+        allNamedTags.erase(std::unique(allNamedTags.begin(), allNamedTags.end()), allNamedTags.end());
+
         ImGui::BeginChild("##premadeconfigs", {0, 0}, false);
         SectionLabel("Premade Configs");
-        SectionNote("Inspect one of the scanned full-config templates, see which colour values are already editable inside it, and export it into a timestamped folder.");
+        SectionNote("Inspect one of the scanned full-config templates, see which colour values and gradients are already editable inside it, and export it into a timestamped folder.");
 
         SectionLabel("Template");
         if(BeginSectionTable("##premadetemplate", 124.f, 110.f)){
@@ -2948,15 +3018,25 @@ struct PagePremadeConfigs {
             }
 
             BeginSectionRow("Summary");
-            if(summaries.empty()){
+            if(isPremadeCacheBuilding()){
+                int done, total;
+                premadeCacheBuildProgress(done, total);
+                const float frac = (total > 0) ? (float)done / (float)total : 0.f;
+                char overlay[32];
+                if(total > 0)
+                    std::snprintf(overlay, sizeof(overlay), "%d / %d files", done, total);
+                else
+                    std::snprintf(overlay, sizeof(overlay), "Scanning...");
+                ImGui::ProgressBar(frac, {-1.f, 0.f}, overlay);
+            } else if(summaries.empty()){
                 ImGui::TextColored(Col::RED, "No premade configs found in the configured premade folder.");
             } else {
                 const auto& summary = summaries[(size_t)templateIdx];
                 ImGui::Text("%d files", summary.fileCount);
                 ImGui::SameLine();
-                ImGui::TextColored(Col::SUBTEXT, "| %d tagged files | %d colour tags (%d named, %d RGB)",
+                ImGui::TextColored(Col::SUBTEXT, "| %d tagged files | %d colour tags (%d named, %d RGB) | %d gradients",
                     summary.recolourableFiles, summary.colourTagCount,
-                    summary.namedColourTagCount, summary.rgbColourTagCount);
+                    summary.namedColourTagCount, summary.rgbColourTagCount, summary.gradientRunCount);
             }
             EndSectionTable();
         }
@@ -2965,31 +3045,90 @@ struct PagePremadeConfigs {
             const auto& summary = summaries[(size_t)templateIdx];
 
             SectionLabel("Detected Template Edits");
-            if(summary.editableValues.empty()){
-                SectionNote("No APB colour tags were detected in this scanned template.");
+            if(summary.editableValues.empty() && summary.editableGradients.empty()){
+                SectionNote("No APB colour tags or gradients were detected in this scanned template.");
             } else {
-                SectionNote("Named tags can be templated as <col:{color}>. RGB tags can be templated as <Color:R={r} G={g} B={b}>.");
+                SectionNote("Named tags can be templated as <col:{color}>. RGB tags can be templated as <Color:R={r} G={g} B={b}>. Repeated RGB sequences are surfaced here as editable gradients.");
 
-                ImGui::TextColored(Col::SUBTEXT, "Editable colour values");
-                ImGui::BeginChild("##premadeeditablevalues", ImVec2(0, 150), true);
-                for(const auto& value : summary.editableValues){
-                    ImGui::Text("%s", value.value.c_str());
-                    ImGui::SameLine();
-                    ImGui::TextColored(Col::SUBTEXT, "[%s | %d hits | %d files]",
-                        value.kind.c_str(), value.occurrences, value.fileCount);
-                    ImGui::TextColored(Col::SUBTEXT, "Template form: %s", value.replacementHint.c_str());
+                if(!summary.editableGradients.empty()){
+                    ImGui::TextColored(Col::SUBTEXT, "Editable gradients");
+                    ImGui::BeginChild("##premadeeditablegradients", ImVec2(0, 140), true);
+                    for(const auto& gradient : summary.editableGradients){
+                        ImGui::Text("%s", gradient.preview.c_str());
+                        ImGui::SameLine();
+                        ImGui::TextColored(Col::SUBTEXT, "[%s | %d steps | %d unique | %d hits | %d files]",
+                            gradient.kind.c_str(), gradient.steps, gradient.uniqueSteps,
+                            gradient.occurrences, gradient.fileCount);
+                        if(!gradient.sampleText.empty())
+                            ImGui::TextColored(Col::SUBTEXT, "Sample: %s", gradient.sampleText.c_str());
+                        ImGui::TextColored(Col::SUBTEXT, "Template form: %s", gradient.replacementHint.c_str());
+                        ImGui::Spacing();
+                    }
+                    ImGui::EndChild();
                     ImGui::Spacing();
                 }
-                ImGui::EndChild();
 
-                ImGui::Spacing();
+                if(!summary.editableValues.empty()){
+                    ImGui::TextColored(Col::SUBTEXT, "Editable colour values");
+                    ImGui::BeginChild("##premadeeditablevalues", ImVec2(0, 140), true);
+                    for(int vi = 0; vi < (int)summary.editableValues.size(); ++vi){
+                        const auto& value = summary.editableValues[(size_t)vi];
+                        ImGui::PushID(vi);
+                        if(value.kind == "Named"){
+                            auto it = namedOverrides.find(value.value);
+                            if(it == namedOverrides.end()){
+                                namedOverrides.emplace(value.value, value.value);
+                                it = namedOverrides.find(value.value);
+                            }
+                            std::string& chosen = it->second;
+                            if(ImGui::ColorButton("##ncolbtn", namedTagColor(chosen),
+                                    ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoBorder,
+                                    {18.f, 18.f}))
+                                ImGui::OpenPopup("##ncolpopup");
+                            if(ImGui::BeginPopup("##ncolpopup")){
+                                ImGui::TextColored(Col::SUBTEXT, "Named Tags");
+                                ImGui::Separator();
+                                for(const auto& tag : allNamedTags){
+                                    ImGui::ColorButton(("##ts_" + tag).c_str(), namedTagColor(tag),
+                                        ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoBorder,
+                                        {14.f, 14.f});
+                                    ImGui::SameLine();
+                                    if(ImGui::Selectable(tag.c_str(), chosen == tag))
+                                        chosen = tag;
+                                }
+                                ImGui::EndPopup();
+                            }
+                        } else {
+                            auto it = rgbOverrides.find(value.value);
+                            if(it == rgbOverrides.end()){
+                                std::array<float,3> rgb{};
+                                parseRgbValue(value.value, rgb.data());
+                                rgbOverrides.emplace(value.value, rgb);
+                                it = rgbOverrides.find(value.value);
+                            }
+                            ImGui::ColorEdit3("##rgbpick", it->second.data(),
+                                ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_NoInputs);
+                        }
+                        ImGui::SameLine();
+                        ImGui::Text("%s", value.value.c_str());
+                        ImGui::SameLine();
+                        ImGui::TextColored(Col::SUBTEXT, "[%s | %d hits | %d files]",
+                            value.kind.c_str(), value.occurrences, value.fileCount);
+                        ImGui::TextColored(Col::SUBTEXT, "Template form: %s", value.replacementHint.c_str());
+                        ImGui::Spacing();
+                        ImGui::PopID();
+                    }
+                    ImGui::EndChild();
+                    ImGui::Spacing();
+                }
+
                 ImGui::TextColored(Col::SUBTEXT, "Tagged files");
                 ImGui::BeginChild("##premadeeditablefiles", ImVec2(0, 120), true);
                 for(const auto& file : summary.editableFiles){
                     ImGui::Text("%s", file.relativePath.c_str());
                     ImGui::SameLine();
-                    ImGui::TextColored(Col::SUBTEXT, "[%d named | %d RGB]",
-                        file.namedColourTags, file.rgbColourTags);
+                    ImGui::TextColored(Col::SUBTEXT, "[%d named | %d RGB | %d gradients]",
+                        file.namedColourTags, file.rgbColourTags, file.gradientRuns);
                 }
                 ImGui::EndChild();
             }

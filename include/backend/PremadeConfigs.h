@@ -15,10 +15,22 @@ struct PremadeConfigEditableValue {
     int fileCount = 0;
 };
 
+struct PremadeConfigEditableGradient {
+    std::string kind;
+    std::string preview;
+    std::string sampleText;
+    std::string replacementHint;
+    int steps = 0;
+    int uniqueSteps = 0;
+    int occurrences = 0;
+    int fileCount = 0;
+};
+
 struct PremadeConfigEditableFile {
     std::string relativePath;
     int namedColourTags = 0;
     int rgbColourTags = 0;
+    int gradientRuns = 0;
 };
 
 struct PremadeConfigSummary {
@@ -28,7 +40,9 @@ struct PremadeConfigSummary {
     int colourTagCount = 0;
     int namedColourTagCount = 0;
     int rgbColourTagCount = 0;
+    int gradientRunCount = 0;
     std::vector<PremadeConfigEditableValue> editableValues;
+    std::vector<PremadeConfigEditableGradient> editableGradients;
     std::vector<PremadeConfigEditableFile> editableFiles;
 };
 
@@ -46,7 +60,9 @@ struct PremadeConfigExportResult {
 const std::string& premadeConfigLocation();
 void setPremadeConfigLocation(const std::string& path);
 void refreshPremadeConfigSummaries();
-const std::vector<PremadeConfigSummary>& premadeConfigSummaries();
+std::vector<PremadeConfigSummary> premadeConfigSummaries();
+bool isPremadeCacheBuilding();
+void premadeCacheBuildProgress(int& done, int& total);
 
 bool exportPremadeConfig(
     const PremadeConfigExportOptions& options,
