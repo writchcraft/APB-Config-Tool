@@ -584,8 +584,9 @@ PlayerRolesResult generatePlayerRolesFile(
         const std::string displayName = role.value("sDisplayName", sourceDisplayName);
         const std::string generatedDisplay =
             buildDisplayName(displayName, nameStyle, solid, gradStart, gradMiddle, gradEnd);
+        const bool isAchievement = roleKey.rfind("Ach", 0) == 0;
         const DescriptionBuild desc =
-            buildDescription(roleKey, role, useShortEquipmentNames);
+            isAchievement ? DescriptionBuild{} : buildDescription(roleKey, role, useShortEquipmentNames);
         const std::string generatedDesc =
             desc.text.empty() ? role.value("sDescription", inputEntry.descValue) : desc.text;
 
