@@ -19,6 +19,24 @@
 #include <filesystem>
 #include "imgui.h"
 
+// ── Colour-tag formatting helpers ─────────────────────────────────────────
+// Format a float without trailing zeros: 0.650000 → "0.65", 1.000000 → "1"
+inline std::string fmtF(float v){
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%.6f", v);
+    char* dot = std::strchr(buf, '.');
+    if(dot){
+        char* end = buf + std::strlen(buf) - 1;
+        while(end > dot && *end == '0') *end-- = '\0';
+        if(*end == '.') *end = '\0';
+    }
+    return buf;
+}
+
+inline std::string fmtColourTag(float r, float g, float b){
+    return "<Color:R=" + fmtF(r) + " G=" + fmtF(g) + " B=" + fmtF(b) + ">";
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  APB-accurate colour palette  (sampled from the Options menu screenshot)
 // ═══════════════════════════════════════════════════════════════════════════

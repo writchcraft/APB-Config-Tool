@@ -47,8 +47,7 @@ std::string hardGradientString(const std::string& text,const std::vector<RGB>& p
     for(char ch:text){
         if(skip&&ch==' '){out+=ch;continue;}
         const RGB& c=pal[pat[step%period]];
-        char buf[96]; snprintf(buf,sizeof(buf),"<Color:R=%.6f G=%.6f B=%.6f>",c.r,c.g,c.b);
-        out+=buf; out+=ch; ++step;
+        out+=openColorTag(c); out+=ch; ++step;
     }
     out+="<Color:/>";
     return out;
@@ -63,8 +62,7 @@ std::string smoothGradientString(const std::string& text,const RGB& s,const RGB&
         if(skip&&ch==' '){out+=ch;continue;}
         double t=(N==1)?0.0:double(k)/(N-1);
         RGB c=lerpRGB(s,e,t);
-        char buf[128]; snprintf(buf,sizeof(buf),"<Color:R=%.6f G=%.6f B=%.6f>%c<Color:/>",c.r,c.g,c.b,ch);
-        out+=buf; ++k;
+        out+=colorTag(c,std::string(1,ch)); ++k;
     }
     return out;
 }
@@ -80,8 +78,7 @@ std::string tripleGradientString(const std::string& text,const RGB& a,const RGB&
         RGB col = (t <= 0.5)
             ? lerpRGB(a,b,t*2.0)
             : lerpRGB(b,c,(t-0.5)*2.0);
-        char buf[128]; snprintf(buf,sizeof(buf),"<Color:R=%.6f G=%.6f B=%.6f>%c<Color:/>",col.r,col.g,col.b,ch);
-        out+=buf; ++k;
+        out+=colorTag(col,std::string(1,ch)); ++k;
     }
     return out;
 }

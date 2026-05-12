@@ -2,8 +2,22 @@
 #include <string>
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 
 namespace apb {
+
+// Format a float without trailing zeros: 0.650000 → "0.65", 1.000000 → "1"
+inline std::string fmtF(double v){
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%.6f", v);
+    char* dot = std::strchr(buf, '.');
+    if(dot){
+        char* end = buf + std::strlen(buf) - 1;
+        while(end > dot && *end == '0') *end-- = '\0';
+        if(*end == '.') *end = '\0';
+    }
+    return buf;
+}
 
 struct RGB { double r=0,g=0,b=0; };
 
@@ -16,10 +30,11 @@ inline double lerpD(double a,double b,double t){ return a+(b-a)*t; }
 inline RGB lerpRGB(const RGB& a,const RGB& b,double t){
     return {lerpD(a.r,b.r,t),lerpD(a.g,b.g,t),lerpD(a.b,b.b,t)};
 }
+inline std::string openColorTag(const RGB& c){
+    return "<Color:R=" + fmtF(c.r) + " G=" + fmtF(c.g) + " B=" + fmtF(c.b) + ">";
+}
 inline std::string colorTag(const RGB& c,const std::string& text){
-    char buf[512];
-    snprintf(buf,sizeof(buf),"<Color:R=%.3f G=%.3f B=%.3f>%s<Color:/>",c.r,c.g,c.b,text.c_str());
-    return buf;
+    return openColorTag(c) + text + "<Color:/>";
 }
 inline std::string gradientText(const std::string& label,const RGB& c1,const RGB& c2){
     if(label.empty()) return {};

@@ -1249,9 +1249,7 @@ struct PageReloadResupplyText {
                 true);
         } else {
             const RGB solid = rgbFromFloats(state.solid);
-            char buf[128];
-            std::snprintf(buf, sizeof(buf), "<Color:R=%.6f G=%.6f B=%.6f>", solid.r, solid.g, solid.b);
-            coloured = std::string(buf) + plain + "<Color:/>";
+            coloured = apb::colorTag(solid, plain);
         }
 
         const char* font = fontLabel(state.fontIdx);
@@ -2321,8 +2319,9 @@ struct PageHexConverter {
     }
 
     void updateTagFromRgb(){
-        std::snprintf(apbTag, sizeof(apbTag),
-            "<Color:R=%.6f G=%.6f B=%.6f>", rgb[0], rgb[1], rgb[2]);
+        const std::string tag = fmtColourTag(rgb[0], rgb[1], rgb[2]);
+        std::strncpy(apbTag, tag.c_str(), sizeof(apbTag) - 1);
+        apbTag[sizeof(apbTag) - 1] = '\0';
     }
 
     void draw(){
@@ -2873,6 +2872,9 @@ struct PagePremadeConfigs {
         std::array<float,3> startRgb = {1.f,1.f,1.f};
         std::array<float,3> midRgb   = {0.5f,0.5f,0.5f};
         std::array<float,3> endRgb   = {1.f,1.f,1.f};
+        // Stepped palette: original normalised values + user-chosen replacement colours
+        std::vector<std::string>          origPalette;
+        std::vector<std::array<float,3>>  paletteRgb;
     };
     std::map<std::string, GradientOverrideState> gradientOverrides;
 
@@ -2934,23 +2936,12 @@ struct PagePremadeConfigs {
             if(n < 1) continue;
 
             if(ov.outputType == GradientType::Stepped){
-                // Map each unique palette colour (in order of first appearance) to an
-                // evenly-spaced point between start and end, preserving stepped structure.
-                std::vector<std::string> palette;
-                for(const auto& step : steps){
-                    bool found = false;
-                    for(const auto& p : palette) if(p == step){ found = true; break; }
-                    if(!found) palette.push_back(step);
-                }
-                const int nu = (int)palette.size();
+                // Direct palette substitution: origPalette[i] → paletteRgb[i]
+                const int nu = (int)std::min(ov.origPalette.size(), ov.paletteRgb.size());
                 for(int ui = 0; ui < nu; ++ui){
-                    const float t = (nu > 1) ? (float)ui / (float)(nu - 1) : 0.f;
-                    const float nr = ov.startRgb[0] + (ov.endRgb[0] - ov.startRgb[0]) * t;
-                    const float ng = ov.startRgb[1] + (ov.endRgb[1] - ov.startRgb[1]) * t;
-                    const float nb = ov.startRgb[2] + (ov.endRgb[2] - ov.startRgb[2]) * t;
-                    char buf[64];
-                    std::snprintf(buf, sizeof(buf), "R=%.3f G=%.3f B=%.3f", nr, ng, nb);
-                    options.colourSubstitutions[palette[(size_t)ui]] = buf;
+                    const auto& col = ov.paletteRgb[(size_t)ui];
+                    options.colourSubstitutions[ov.origPalette[(size_t)ui]] =
+                        "R=" + fmtF(col[0]) + " G=" + fmtF(col[1]) + " B=" + fmtF(col[2]);
                 }
             } else {
                 for(int i = 0; i < n; ++i){
@@ -2968,9 +2959,8 @@ struct PagePremadeConfigs {
                         ng = ov.startRgb[1] + (ov.endRgb[1] - ov.startRgb[1]) * t;
                         nb = ov.startRgb[2] + (ov.endRgb[2] - ov.startRgb[2]) * t;
                     }
-                    char buf[64];
-                    std::snprintf(buf, sizeof(buf), "R=%.3f G=%.3f B=%.3f", nr, ng, nb);
-                    options.colourSubstitutions[steps[(size_t)i]] = buf;
+                    options.colourSubstitutions[steps[(size_t)i]] =
+                        "R=" + fmtF(nr) + " G=" + fmtF(ng) + " B=" + fmtF(nb);
                 }
             }
         }
@@ -3318,6 +3308,21 @@ struct PagePremadeConfigs {
                                     parseRgbValue(grad.midValue, tmp);
                                     ov.midRgb = {tmp[0],tmp[1],tmp[2]};
                                 }
+                                // Build stepped palette in order of first appearance
+                                {
+                                    std::istringstream ss(grad.sequence);
+                                    std::string step;
+                                    while(std::getline(ss, step, '|')){
+                                        if(step.empty()) continue;
+                                        bool found = false;
+                                        for(const auto& p : ov.origPalette) if(p == step){ found = true; break; }
+                                        if(!found){
+                                            ov.origPalette.push_back(step);
+                                            parseRgbValue(step, tmp);
+                                            ov.paletteRgb.push_back({tmp[0],tmp[1],tmp[2]});
+                                        }
+                                    }
+                                }
                             }
 
                             // ── Row 1: detection info ─────────────────────────
@@ -3338,7 +3343,28 @@ struct PagePremadeConfigs {
                             ImGui::SameLine(0.f, 8.f);
 
                             // Original colour swatches
-                            {
+                            if(grad.type == GradientType::Stepped){
+                                // Show unique palette colours in order of first appearance
+                                std::vector<std::string> palette;
+                                {
+                                    std::istringstream ss(grad.sequence);
+                                    std::string step;
+                                    while(std::getline(ss, step, '|')){
+                                        if(step.empty()) continue;
+                                        bool found = false;
+                                        for(const auto& p : palette) if(p == step){ found = true; break; }
+                                        if(!found) palette.push_back(step);
+                                    }
+                                }
+                                for(int pi = 0; pi < (int)palette.size(); ++pi){
+                                    float pc[3] = {0.5f,0.5f,0.5f};
+                                    parseRgbValue(palette[(size_t)pi], pc);
+                                    if(pi > 0) ImGui::SameLine(0.f, 2.f);
+                                    char pid[16]; std::snprintf(pid, sizeof(pid), "##ogp%d", pi);
+                                    ImGui::ColorButton(pid, {pc[0],pc[1],pc[2],1.f},
+                                        ImGuiColorEditFlags_NoPicker|ImGuiColorEditFlags_NoTooltip|ImGuiColorEditFlags_NoBorder,{14.f,14.f});
+                                }
+                            } else {
                                 float cs[3]={0.5f,0.5f,0.5f}, ce[3]={0.5f,0.5f,0.5f};
                                 parseRgbValue(ov.origStartValue, cs);
                                 parseRgbValue(ov.origEndValue,   ce);
@@ -3378,19 +3404,29 @@ struct PagePremadeConfigs {
                             if(ImGui::Combo("##outtype", &typeIdx, kTypeItems, 3))
                                 ov.outputType = (GradientType)typeIdx;
                             ImGui::SameLine(0.f, 6.f);
-                            ImGui::TextColored(Col::SUBTEXT, "Start");
-                            ImGui::SameLine(0.f, 4.f);
-                            ColorPickerButton("##grs", ov.startRgb.data());
-                            if(ov.outputType == GradientType::Triple){
-                                ImGui::SameLine(0.f, 6.f);
-                                ImGui::TextColored(Col::SUBTEXT, "Mid");
+
+                            if(ov.outputType == GradientType::Stepped){
+                                // One picker per palette colour
+                                for(int pi = 0; pi < (int)ov.paletteRgb.size(); ++pi){
+                                    char pid[16]; std::snprintf(pid, sizeof(pid), "##grp%d", pi);
+                                    ColorPickerButton(pid, ov.paletteRgb[(size_t)pi].data());
+                                    if(pi + 1 < (int)ov.paletteRgb.size()) ImGui::SameLine(0.f, 3.f);
+                                }
+                            } else {
+                                ImGui::TextColored(Col::SUBTEXT, "Start");
                                 ImGui::SameLine(0.f, 4.f);
-                                ColorPickerButton("##grm", ov.midRgb.data());
+                                ColorPickerButton("##grs", ov.startRgb.data());
+                                if(ov.outputType == GradientType::Triple){
+                                    ImGui::SameLine(0.f, 6.f);
+                                    ImGui::TextColored(Col::SUBTEXT, "Mid");
+                                    ImGui::SameLine(0.f, 4.f);
+                                    ColorPickerButton("##grm", ov.midRgb.data());
+                                }
+                                ImGui::SameLine(0.f, 6.f);
+                                ImGui::TextColored(Col::SUBTEXT, "End");
+                                ImGui::SameLine(0.f, 4.f);
+                                ColorPickerButton("##gre", ov.endRgb.data());
                             }
-                            ImGui::SameLine(0.f, 6.f);
-                            ImGui::TextColored(Col::SUBTEXT, "End");
-                            ImGui::SameLine(0.f, 4.f);
-                            ColorPickerButton("##gre", ov.endRgb.data());
 
                             if(!ov.enabled) ImGui::EndDisabled();
 

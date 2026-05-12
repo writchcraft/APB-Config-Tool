@@ -344,8 +344,8 @@ struct LocalizationPage : IPage {
                 ImGui::Spacing();
 
                 char colTag[128];
-                snprintf(colTag, sizeof(colTag),
-                    "<Color:R=%.6f G=%.6f B=%.6f>", col[0], col[1], col[2]);
+                std::snprintf(colTag, sizeof(colTag), "<Color:R=%s G=%s B=%s>",
+                    fmtF(col[0]).c_str(), fmtF(col[1]).c_str(), fmtF(col[2]).c_str());
                 ImGui::Text("APB Colour tag:"); ImGui::SameLine(150.f);
                 ImGui::SetNextItemWidth(380.f);
                 ImGui::InputText("##ctag", colTag, sizeof(colTag), ImGuiInputTextFlags_ReadOnly);

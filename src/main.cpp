@@ -247,13 +247,28 @@ int WINAPI WinMain(HINSTANCE hi,HINSTANCE,LPSTR,int){
     io.IniFilename = "apbtool.ini";
     {
         static std::vector<unsigned char> uiFontData;
+        ImFont* uiFont = nullptr;
         if(LoadResourceBytes(IDR_FONT_BENTONSANS_REGULAR, uiFontData) && !uiFontData.empty()){
             ImFontConfig cfg;
             cfg.FontDataOwnedByAtlas = false;
-            if(io.Fonts->AddFontFromMemoryTTF(uiFontData.data(), (int)uiFontData.size(), 16.0f, &cfg) == nullptr)
-                io.Fonts->AddFontDefault();
-        } else {
-            io.Fonts->AddFontDefault();
+            uiFont = io.Fonts->AddFontFromMemoryTTF(uiFontData.data(), (int)uiFontData.size(), 16.0f, &cfg);
+        }
+        if(!uiFont) io.Fonts->AddFontDefault();
+
+        // Merge a system font for Latin-1 Supplement (0x0080-0x00FF) to cover glyphs
+        // BentonSans lacks — e.g. U+00AC (¬), currency symbols, etc.
+        static const ImWchar latin1Supp[] = { 0x0080, 0x00FF, 0 };
+        const char* sysFontCandidates[] = {
+            "C:\\Windows\\Fonts\\segoeui.ttf",
+            "C:\\Windows\\Fonts\\arial.ttf",
+        };
+        for(const char* fp : sysFontCandidates){
+            if(std::filesystem::exists(fp)){
+                ImFontConfig mc;
+                mc.MergeMode = true;
+                io.Fonts->AddFontFromFileTTF(fp, 16.0f, &mc, latin1Supp);
+                break;
+            }
         }
     }
     RegisterPreviewFonts(io);

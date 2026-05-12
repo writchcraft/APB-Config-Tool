@@ -170,9 +170,7 @@ static std::string applyMode(const std::string& text,const GunTypeColourSettings
         return smoothGradientString(text, s.smoothStart, s.smoothEnd, true);
     if(s.mode == ColourMode::TRIPLE)
         return tripleGradientString(text, s.tripleStart, s.tripleMiddle, s.tripleEnd, true);
-    char buf[128];
-    snprintf(buf,sizeof(buf),"<Color:R=%.6f G=%.6f B=%.6f>",s.solid.r,s.solid.g,s.solid.b);
-    return std::string(buf)+text+"<Color:/>";
+    return colorTag(s.solid, text);
 }
 
 std::vector<WeaponInventoryEntry> scanInventoryWeapons(const std::string& inputPath){

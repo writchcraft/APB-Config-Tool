@@ -436,6 +436,28 @@ static std::string extractSampleAfterTag(const std::string& text, size_t afterTa
     return clipPreview(cleaned, 60);
 }
 
+// Extract only the characters that sit inside the colour tags for a run,
+// stopping before any uncoloured text that follows the last close tag.
+static std::string extractInlineRunText(
+    const std::string& line,
+    const std::vector<ParsedRgbTag>& tags,
+    size_t firstIdx, size_t lastIdx)
+{
+    std::string out;
+    for(size_t j = firstIdx; j <= lastIdx; ++j){
+        const size_t cStart = tags[j].end; // just after the open tag
+        size_t cEnd;
+        if(j < lastIdx){
+            cEnd = tags[j + 1].start;  // up to the next open tag
+        } else {
+            cEnd = line.find('<', cStart);  // stop at the close tag
+            if(cEnd == std::string::npos) cEnd = line.size();
+        }
+        out += stripColourTags(line.substr(cStart, cEnd - cStart));
+    }
+    return out;
+}
+
 static void inspectInlineRgbGradients(
     const std::string& line,
     const std::string& relativePath,
@@ -447,6 +469,12 @@ static void inspectInlineRgbGradients(
     if(tags.size() < 3)
         return;
 
+    // Skip lines whose uncoloured content contains the PlayerRoles title marker.
+    // The marker "(Title)" appears after the last colour close tag, so it is not
+    // captured by extractInlineRunText but is still present in the raw line.
+    if(stripColourTags(line).find("(Title)") != std::string::npos)
+        return;
+
     size_t runStart = 0;
     for(size_t i = 1; i < tags.size(); ++i){
         const std::string gap = line.substr(tags[i - 1].end, tags[i].start - tags[i - 1].end);
@@ -454,13 +482,13 @@ static void inspectInlineRgbGradients(
         if(visibleGap.size() <= 1)
             continue;
 
-        const std::string sample = stripColourTags(line.substr(tags[runStart].start, tags[i].start - tags[runStart].start));
+        const std::string sample = extractInlineRunText(line, tags, runStart, i - 1);
         recordGradientRun("inline", "Inline RGB Gradient", sample, tags, runStart, i - 1,
             relativePath, summary, editableFile, editableGradients);
         runStart = i;
     }
 
-    const std::string sample = stripColourTags(line.substr(tags[runStart].start));
+    const std::string sample = extractInlineRunText(line, tags, runStart, tags.size() - 1);
     recordGradientRun("inline", "Inline RGB Gradient", sample, tags, runStart, tags.size() - 1,
         relativePath, summary, editableFile, editableGradients);
 }
@@ -541,52 +569,58 @@ static void inspectEditableColourTags(
     PremadeConfigEditableFile editableFile;
     editableFile.relativePath = relativePath;
 
-    for(std::sregex_iterator it(utf8Text.begin(), utf8Text.end(), openRgbTag), end; it != end; ++it){
-        const std::smatch& match = *it;
-        const std::string value = normaliseTagValue(match[1].str());
-        { float r, g, b; if(std::sscanf(value.c_str(), "R=%f G=%f B=%f", &r, &g, &b) != 3) continue; }
-        const std::string key = "rgb:" + value;
-        auto& acc = editableValues[key];
-        if(acc.value.kind.empty()){
-            acc.value.kind = "RGB";
-            acc.value.value = value.empty() ? "(empty)" : value;
-            acc.value.replacementHint = "<Color:R={r} G={g} B={b}>";
-        }
-        acc.value.occurrences++;
-        acc.files.insert(relativePath);
-        editableFile.rgbColourTags++;
-        if(acc.sampleSet.size() < 5){
-            const std::string s = extractSampleAfterTag(
-                utf8Text, (size_t)match.position() + (size_t)match.length());
-            if(!s.empty()) acc.sampleSet.insert(s);
-        }
-    }
-
-    for(std::sregex_iterator it(utf8Text.begin(), utf8Text.end(), openNamedTag), end; it != end; ++it){
-        const std::smatch& match = *it;
-        const std::string value = normaliseTagValue(match[1].str());
-        const std::string key = "named:" + value;
-        auto& acc = editableValues[key];
-        if(acc.value.kind.empty()){
-            acc.value.kind = "Named";
-            acc.value.value = value.empty() ? "(empty)" : value;
-            acc.value.replacementHint = "<col:{color}>";
-        }
-        acc.value.occurrences++;
-        acc.files.insert(relativePath);
-        editableFile.namedColourTags++;
-        if(acc.sampleSet.size() < 5){
-            const std::string s = extractSampleAfterTag(
-                utf8Text, (size_t)match.position() + (size_t)match.length());
-            if(!s.empty()) acc.sampleSet.insert(s);
-        }
-    }
-
-    std::istringstream lines(utf8Text);
+    std::istringstream lineStream(utf8Text);
     std::string line;
-    while(std::getline(lines, line)){
+    while(std::getline(lineStream, line)){
         if(!line.empty() && line.back() == '\r')
             line.pop_back();
+
+        // Skip PlayerRoles title entries — their colours are not user-editable
+        const bool isTitleLine = stripColourTags(line).find("(Title)") != std::string::npos;
+
+        if(!isTitleLine){
+            for(std::sregex_iterator it(line.begin(), line.end(), openRgbTag), end; it != end; ++it){
+                const std::smatch& match = *it;
+                const std::string value = normaliseTagValue(match[1].str());
+                { float r, g, b; if(std::sscanf(value.c_str(), "R=%f G=%f B=%f", &r, &g, &b) != 3) continue; }
+                const std::string key = "rgb:" + value;
+                auto& acc = editableValues[key];
+                if(acc.value.kind.empty()){
+                    acc.value.kind = "RGB";
+                    acc.value.value = value.empty() ? "(empty)" : value;
+                    acc.value.replacementHint = "<Color:R={r} G={g} B={b}>";
+                }
+                acc.value.occurrences++;
+                acc.files.insert(relativePath);
+                editableFile.rgbColourTags++;
+                if(acc.sampleSet.size() < 5){
+                    const std::string s = extractSampleAfterTag(
+                        line, (size_t)match.position() + (size_t)match.length());
+                    if(!s.empty()) acc.sampleSet.insert(s);
+                }
+            }
+
+            for(std::sregex_iterator it(line.begin(), line.end(), openNamedTag), end; it != end; ++it){
+                const std::smatch& match = *it;
+                const std::string value = normaliseTagValue(match[1].str());
+                const std::string key = "named:" + value;
+                auto& acc = editableValues[key];
+                if(acc.value.kind.empty()){
+                    acc.value.kind = "Named";
+                    acc.value.value = value.empty() ? "(empty)" : value;
+                    acc.value.replacementHint = "<col:{color}>";
+                }
+                acc.value.occurrences++;
+                acc.files.insert(relativePath);
+                editableFile.namedColourTags++;
+                if(acc.sampleSet.size() < 5){
+                    const std::string s = extractSampleAfterTag(
+                        line, (size_t)match.position() + (size_t)match.length());
+                    if(!s.empty()) acc.sampleSet.insert(s);
+                }
+            }
+        }
+
         inspectInlineRgbGradients(line, relativePath, summary, editableFile, editableGradients);
     }
     inspectLineRgbGradients(utf8Text, relativePath, summary, editableFile, editableGradients);
@@ -707,10 +741,20 @@ static void buildPremadeCache(const std::string& location, PremadeCache& out){
                 if(!step.empty()) gradientColours.insert(step);
         }
 
+        // Helper: normalise a raw tag value string ("R=0.65 G=0.022353 B=0.4")
+        // through the same float round-trip used by parseRgbTags, so it can be
+        // matched against the gradient sequence which uses normaliseRgbValue.
+        auto toGradientKey = [](const std::string& raw) -> std::string {
+            float r = 0, g = 0, b = 0;
+            if(std::sscanf(raw.c_str(), "R=%f G=%f B=%f", &r, &g, &b) == 3)
+                return normaliseRgbValue(r, g, b);
+            return raw;
+        };
+
         summary.editableValues.reserve(editableValues.size());
         for(auto& [key, acc] : editableValues){
             (void)key;
-            if(acc.value.kind == "RGB" && gradientColours.count(acc.value.value))
+            if(acc.value.kind == "RGB" && gradientColours.count(toGradientKey(acc.value.value)))
                 continue; // already represented by a gradient entry
             acc.value.fileCount = (int)acc.files.size();
             acc.value.samples.assign(acc.sampleSet.begin(), acc.sampleSet.end());

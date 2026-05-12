@@ -239,9 +239,7 @@ static std::string buildVehicleLine(const std::string& key, const VStats& v,
 {
     auto lerp=[](double a,double b,double t){return a+(b-a)*t;};
     auto ctag=[](double r,double g,double b,const std::string& t)->std::string{
-        char buf[256];
-        snprintf(buf,sizeof(buf),"<Color:R=%.3f G=%.3f B=%.3f>%s<Color:/>",r,g,b,t.c_str());
-        return buf;
+        return colorTag({r,g,b}, t);
     };
     auto grad=[&](const std::string& lbl, RGB c1, RGB c2)->std::string{
         if(lbl.empty()) return {};
