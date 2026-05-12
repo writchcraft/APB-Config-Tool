@@ -856,6 +856,81 @@ struct PageContactDescription {
     std::atomic<bool> cancelRequested{false};
     std::string lastOut;
     bool autoDetectTried = false;
+    std::vector<PreviewCard> previewCardsUnlocks;
+    std::vector<PreviewCard> previewCardsMissions;
+    bool previewCardsInit = false;
+
+    void initPreviewCards(){
+        if(previewCardsInit) return;
+        previewCardsInit = true;
+
+        previewCardsUnlocks.resize(4);
+        previewCardsUnlocks[0].resourceId = IDR_IMG_CONTACT_UNLOCKS_ARLON;
+        previewCardsUnlocks[0].imgPath = "Assets\\Images_Contacts\\Unlocks_Arlon.png";
+        previewCardsUnlocks[1].resourceId = IDR_IMG_CONTACT_UNLOCKS_BIRTH;
+        previewCardsUnlocks[1].imgPath = "Assets\\Images_Contacts\\Unlocks_Birth.png";
+        previewCardsUnlocks[2].resourceId = IDR_IMG_CONTACT_UNLOCKS_LUCAS;
+        previewCardsUnlocks[2].imgPath = "Assets\\Images_Contacts\\Unlocks_Lucas.png";
+        previewCardsUnlocks[3].resourceId = IDR_IMG_CONTACT_UNLOCKS_BRITNEY;
+        previewCardsUnlocks[3].imgPath = "Assets\\Images_Contacts\\Unlocks_Britney.png";
+
+        previewCardsMissions.resize(4);
+        previewCardsMissions[0].resourceId = IDR_IMG_CONTACT_MISSIONS_BIRTH;
+        previewCardsMissions[0].imgPath = "Assets\\Images_Contacts\\Missions_Birth.png";
+        previewCardsMissions[1].resourceId = IDR_IMG_CONTACT_MISSIONS_TIPTOE;
+        previewCardsMissions[1].imgPath = "Assets\\Images_Contacts\\Missions_Tiptoe.png";
+        previewCardsMissions[2].resourceId = IDR_IMG_CONTACT_MISSIONS_MIGUEL;
+        previewCardsMissions[2].imgPath = "Assets\\Images_Contacts\\Missions_Miguel.png";
+        previewCardsMissions[3].resourceId = IDR_IMG_CONTACT_MISSIONS_CHIZA;
+        previewCardsMissions[3].imgPath = "Assets\\Images_Contacts\\Missions_Chiza.png";
+    }
+
+    void drawPreviewGallery(){
+        SectionLabel("Preview");
+        initPreviewCards();
+
+        std::vector<PreviewCard>& cards =
+            (modeIdx == 1) ? previewCardsMissions : previewCardsUnlocks;
+
+        const float availW = ImGui::GetContentRegionAvail().x;
+        const float gap = 12.f;
+        const float preferredImageW = 245.f;
+        const float minimumImageW = 170.f;
+        int columns = 1;
+        for(int candidate = 4; candidate >= 1; --candidate){
+            const float candidateW = (availW - gap * (candidate - 1)) / candidate;
+            if(candidateW >= minimumImageW){ columns = candidate; break; }
+        }
+        const float imageW = std::min(preferredImageW,
+            (availW - gap * (columns - 1)) / columns);
+
+        ImGui::BeginChild("##contactspreview", {0, 0}, false);
+        for(int i = 0; i < (int)cards.size(); ++i){
+            auto& card = cards[i];
+            card.tryLoad();
+
+            if(columns > 1 && (i % columns) != 0)
+                ImGui::SameLine(0.f, gap);
+            else if(i > 0)
+                ImGui::Spacing();
+
+            if(card.srv){
+                const float scale = imageW / (card.imgW > 0 ? (float)card.imgW : imageW);
+                const float imageH = (card.imgH > 0 ? (float)card.imgH : imageW) * scale;
+                ImGui::Image((ImTextureID)card.srv, {imageW, imageH});
+                ImGui::GetWindowDrawList()->AddRect(
+                    ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
+                    ImGui::GetColorU32(Col::BORDER));
+            } else {
+                ImGui::BeginChild(
+                    ("##contactsmissing" + std::to_string(i)).c_str(),
+                    {imageW, imageW * 1.8f}, true);
+                ImGui::TextColored(Col::SUBTEXT, "Preview unavailable");
+                ImGui::EndChild();
+            }
+        }
+        ImGui::EndChild();
+    }
 
     void ensureDefaultIntPath(){
         if(autoDetectTried || intPath[0]) return;
@@ -985,9 +1060,7 @@ struct PageContactDescription {
         if(!lastOut.empty() && ImGui::Button("Open Output", {110, 32}))
             OpenInExplorer(lastOut);
 
-        SectionLabel("Log");
-        std::string t = log.get();
-        ReadOnlyLogBox("##contactslog", t, {-1.f, -1.f});
+        drawPreviewGallery();
         ImGui::EndChild();
     }
 };

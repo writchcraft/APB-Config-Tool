@@ -54,3 +54,13 @@ IDR_IMG_PLAYER_ROLE_RIFLEMAN     RCDATA "..\\Assets\\Images_PlayerRoles\\riflema
 IDR_IMG_PLAYER_ROLE_BURGLAR      RCDATA "..\\Assets\\Images_PlayerRoles\\burglar.png"
 IDR_IMG_PLAYER_ROLE_EPIDEMIC2024 RCDATA "..\\Assets\\Images_PlayerRoles\\epidemic_2024.png"
 IDR_IMG_PLAYER_ROLE_BURGLAR_SHORT RCDATA "..\\Assets\\Images_PlayerRoles\\burglar_short.png"
+
+IDR_IMG_CONTACT_UNLOCKS_ARLON   RCDATA "..\\Assets\\Images_Contacts\\Unlocks_Arlon.png"
+IDR_IMG_CONTACT_UNLOCKS_BIRTH   RCDATA "..\\Assets\\Images_Contacts\\Unlocks_Birth.png"
+IDR_IMG_CONTACT_UNLOCKS_LUCAS   RCDATA "..\\Assets\\Images_Contacts\\Unlocks_Lucas.png"
+IDR_IMG_CONTACT_UNLOCKS_BRITNEY RCDATA "..\\Assets\\Images_Contacts\\Unlocks_Britney.png"
+
+IDR_IMG_CONTACT_MISSIONS_BIRTH  RCDATA "..\\Assets\\Images_Contacts\\Missions_Birth.png"
+IDR_IMG_CONTACT_MISSIONS_TIPTOE RCDATA "..\\Assets\\Images_Contacts\\Missions_Tiptoe.png"
+IDR_IMG_CONTACT_MISSIONS_MIGUEL RCDATA "..\\Assets\\Images_Contacts\\Missions_Miguel.png"
+IDR_IMG_CONTACT_MISSIONS_CHIZA  RCDATA "..\\Assets\\Images_Contacts\\Missions_Chiza.png"
