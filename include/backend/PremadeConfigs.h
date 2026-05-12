@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <functional>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -13,10 +14,16 @@ struct PremadeConfigEditableValue {
     std::string replacementHint;
     int occurrences = 0;
     int fileCount = 0;
+    std::vector<std::string> samples;
 };
 
+enum class GradientType : uint8_t { Smooth, Triple, Stepped };
+
 struct PremadeConfigEditableGradient {
+    GradientType type = GradientType::Smooth;
     std::string kind;
+    std::string sequence;   // pipe-separated normalised step values (first|...|last)
+    std::string midValue;   // normalised mid-step colour for Triple gradients
     std::string preview;
     std::string sampleText;
     std::string replacementHint;
@@ -49,6 +56,9 @@ struct PremadeConfigSummary {
 struct PremadeConfigExportOptions {
     std::string templateName;
     std::string outputDir;
+    // Optional colour substitutions: normalised-old-value → normalised-new-value.
+    // Applied to every RGB colour tag in every exported text file.
+    std::map<std::string,std::string> colourSubstitutions;
 };
 
 struct PremadeConfigExportResult {

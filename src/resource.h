@@ -1,5 +1,7 @@
 #pragma once
 
+#define IDI_APPICON                 1
+
 #define IDR_FONT_BENTONSANS_REGULAR 101
 #define IDR_FONT_HELVETICA_BOLD     102
 #define IDR_FONT_HELVETICA_REGULAR  103

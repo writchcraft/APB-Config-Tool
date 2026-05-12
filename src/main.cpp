@@ -230,7 +230,9 @@ int WINAPI WinMain(HINSTANCE hi,HINSTANCE,LPSTR,int){
     InitDocumentsFolder();
 
     WNDCLASSEXW wc={sizeof(wc),CS_CLASSDC,WndProc,0,0,hi,
-        nullptr,nullptr,nullptr,nullptr,L"APBConfigTool",nullptr};
+        LoadIconW(hi,MAKEINTRESOURCEW(IDI_APPICON)),
+        nullptr,nullptr,nullptr,L"APBConfigTool",
+        (HICON)LoadImageW(hi,MAKEINTRESOURCEW(IDI_APPICON),IMAGE_ICON,16,16,LR_DEFAULTCOLOR)};
     RegisterClassExW(&wc);
     HWND hw=CreateWindowW(wc.lpszClassName,L"APB Config Tool",
         WS_OVERLAPPEDWINDOW,100,100,1280,800,nullptr,nullptr,hi,nullptr);

@@ -41,6 +41,7 @@ struct PremadeSourceFile {
 struct EditableValueAccumulator {
     PremadeConfigEditableValue value;
     std::set<std::string> files;
+    std::set<std::string> sampleSet;
 };
 
 struct EditableGradientAccumulator {
@@ -53,6 +54,126 @@ struct ParsedRgbTag {
     size_t start = 0;
     size_t end = 0;
 };
+
+struct RgbVec { double r = 0, g = 0, b = 0; };
+
+static bool parseNormalizedRgb(const std::string& s, RgbVec& out){
+    float r, g, b;
+    if(std::sscanf(s.c_str(), "R=%f G=%f B=%f", &r, &g, &b) != 3) return false;
+    out = {(double)r, (double)g, (double)b};
+    return true;
+}
+
+static double rgbDist(const RgbVec& a, const RgbVec& b){
+    const double dr = a.r-b.r, dg = a.g-b.g, db = a.b-b.b;
+    return std::sqrt(dr*dr + dg*dg + db*db);
+}
+
+static RgbVec rgbLerp(const RgbVec& a, const RgbVec& b, double t){
+    return {a.r+(b.r-a.r)*t, a.g+(b.g-a.g)*t, a.b+(b.b-a.b)*t};
+}
+
+// ── Gradient classification helpers ─────────────────────────────────────────
+
+// Parse a pipe-separated normalised sequence into per-step colours.
+static std::vector<RgbVec> parseCols(const std::string& sequence){
+    std::vector<RgbVec> out;
+    std::istringstream ss(sequence);
+    std::string token;
+    while(std::getline(ss, token, '|')){
+        RgbVec c;
+        if(parseNormalizedRgb(token, c))
+            out.push_back(c);
+    }
+    return out;
+}
+
+// True when every step lies within 0.006 of the linear path from first to last.
+static bool isSmoothGradient(const std::vector<RgbVec>& cols){
+    const size_t n = cols.size();
+    if(n < 3) return false;
+    const double span = rgbDist(cols.front(), cols.back());
+    if(span < 0.02) return false;
+    for(size_t i = 0; i < n; ++i){
+        const double t = (double)i / (double)(n - 1);
+        if(rgbDist(cols[i], rgbLerp(cols.front(), cols.back(), t)) > 0.006)
+            return false;
+    }
+    return true;
+}
+
+// True when all steps belong to a palette of 2-6 distinct colours (tolerance 0.006).
+static bool isSteppedGradient(const std::vector<RgbVec>& cols){
+    if(cols.size() < 6) return false;
+    std::vector<RgbVec> palette;
+    for(const auto& c : cols){
+        bool hit = false;
+        for(const auto& p : palette){ if(rgbDist(c, p) < 0.006){ hit = true; break; } }
+        if(!hit){
+            if((int)palette.size() >= 6) return false;
+            palette.push_back(c);
+        }
+    }
+    return (int)palette.size() >= 2;
+}
+
+// Find the best-fit pivot colour for a two-segment (triple) gradient.
+static RgbVec findTripleMid(const std::vector<RgbVec>& cols){
+    const size_t n = cols.size();
+    if(n <= 2) return cols[n / 2];
+    const RgbVec& first = cols.front();
+    const RgbVec& last  = cols.back();
+    double bestErr = 1e18;
+    size_t bestPivot = n / 2;
+    for(size_t p = 1; p + 1 < n; ++p){
+        const RgbVec& mid = cols[p];
+        double err = 0;
+        for(size_t i = 1; i < p; ++i){
+            const double t = (double)i / (double)p;
+            err += rgbDist(cols[i], rgbLerp(first, mid, t));
+        }
+        for(size_t i = p + 1; i < n; ++i){
+            const double t = (double)(i - p) / (double)(n - 1 - p);
+            err += rgbDist(cols[i], rgbLerp(mid, last, t));
+        }
+        if(err < bestErr){ bestErr = err; bestPivot = p; }
+    }
+    return cols[bestPivot];
+}
+
+// Classify a colour sequence and, for Triple, return the pivot colour.
+static GradientType classifyGradient(const std::vector<RgbVec>& cols, RgbVec& outMid){
+    if(isSmoothGradient(cols))  return GradientType::Smooth;
+    if(isSteppedGradient(cols)) return GradientType::Stepped;
+    outMid = findTripleMid(cols);
+    return GradientType::Triple;
+}
+
+// Returns true when the colour sequence looks like a roughly linear gradient.
+// Requires a non-trivial span between first and last, and at least two thirds of
+// the intermediate steps to lie close to the interpolated line.
+static bool isColorSequenceGradientLike(
+    const std::vector<ParsedRgbTag>& tags, size_t firstIdx, size_t lastIdx)
+{
+    const size_t n = lastIdx - firstIdx + 1;
+    if(n < 3) return false;
+    RgbVec first, last;
+    if(!parseNormalizedRgb(tags[firstIdx].normalizedValue, first)) return false;
+    if(!parseNormalizedRgb(tags[lastIdx].normalizedValue,  last))  return false;
+    const double span = rgbDist(first, last);
+    if(span < 0.05) return false;   // endpoints too similar to define a meaningful gradient
+    int nearCount = 0;
+    const int midCount = (int)(n - 2);
+    for(size_t i = firstIdx + 1; i < lastIdx; ++i){
+        RgbVec c;
+        if(!parseNormalizedRgb(tags[i].normalizedValue, c)) continue;
+        const double t = (double)(i - firstIdx) / (double)(lastIdx - firstIdx);
+        if(rgbDist(c, rgbLerp(first, last, t)) <= span * 0.30)
+            ++nearCount;
+    }
+    // Require at least two thirds of intermediate steps to be near the gradient line
+    return nearCount >= (midCount >= 3 ? midCount * 2 / 3 : midCount);
+}
 
 struct PremadeCache {
     std::vector<PremadeConfigSummary> summaries;
@@ -267,8 +388,13 @@ static void recordGradientRun(
     if(steps < 3)
         return;
 
+    // "(Title)" in APB plain text marks a Title-category item name.
+    // Gradients on these are item highlights inside descriptions and must not be touched.
+    if(sampleText.find("(Title)") != std::string::npos)
+        return;
+
     const int uniqueSteps = uniqueGradientSteps(tags, firstIdx, lastIdx);
-    if(uniqueSteps < 3)
+    if(uniqueSteps < 3 && !isColorSequenceGradientLike(tags, firstIdx, lastIdx))
         return;
 
     const std::string sequence = joinGradientSequence(tags, firstIdx, lastIdx);
@@ -276,17 +402,38 @@ static void recordGradientRun(
     auto& acc = editableGradients[key];
     if(acc.gradient.kind.empty()){
         acc.gradient.kind = kind;
+        acc.gradient.sequence = sequence;
         acc.gradient.preview = gradientPreview(tags, firstIdx, lastIdx);
         acc.gradient.sampleText = clipPreview(collapseWhitespace(sampleText));
         acc.gradient.replacementHint = gradientHint(steps);
         acc.gradient.steps = (int)steps;
         acc.gradient.uniqueSteps = uniqueSteps;
+
+        const std::vector<RgbVec> cols = parseCols(sequence);
+        RgbVec mid{};
+        acc.gradient.type = classifyGradient(cols, mid);
+        if(acc.gradient.type == GradientType::Triple)
+            acc.gradient.midValue = normaliseRgbValue(mid.r, mid.g, mid.b);
     }
     acc.gradient.occurrences++;
     acc.files.insert(relativePath);
 
     summary.gradientRunCount++;
     editableFile.gradientRuns++;
+}
+
+static std::string extractSampleAfterTag(const std::string& text, size_t afterTag){
+    if(afterTag >= text.size()) return {};
+    const size_t searchEnd = std::min(text.size(), afterTag + 120);
+    const std::string chunk = text.substr(afterTag, searchEnd - afterTag);
+    static const std::regex cutPoint(
+        R"(<\/col\s*>|<col\s*:|<Color\s*:|\n|\r)", std::regex::icase);
+    std::smatch m;
+    const std::string raw = std::regex_search(chunk, m, cutPoint)
+        ? chunk.substr(0, m.position()) : chunk;
+    const std::string cleaned = collapseWhitespace(trimCopy(stripColourTags(raw)));
+    if(cleaned.empty()) return {};
+    return clipPreview(cleaned, 60);
 }
 
 static void inspectInlineRgbGradients(
@@ -395,7 +542,8 @@ static void inspectEditableColourTags(
     editableFile.relativePath = relativePath;
 
     for(std::sregex_iterator it(utf8Text.begin(), utf8Text.end(), openRgbTag), end; it != end; ++it){
-        const std::string value = normaliseTagValue((*it)[1].str());
+        const std::smatch& match = *it;
+        const std::string value = normaliseTagValue(match[1].str());
         { float r, g, b; if(std::sscanf(value.c_str(), "R=%f G=%f B=%f", &r, &g, &b) != 3) continue; }
         const std::string key = "rgb:" + value;
         auto& acc = editableValues[key];
@@ -407,10 +555,16 @@ static void inspectEditableColourTags(
         acc.value.occurrences++;
         acc.files.insert(relativePath);
         editableFile.rgbColourTags++;
+        if(acc.sampleSet.size() < 5){
+            const std::string s = extractSampleAfterTag(
+                utf8Text, (size_t)match.position() + (size_t)match.length());
+            if(!s.empty()) acc.sampleSet.insert(s);
+        }
     }
 
     for(std::sregex_iterator it(utf8Text.begin(), utf8Text.end(), openNamedTag), end; it != end; ++it){
-        const std::string value = normaliseTagValue((*it)[1].str());
+        const std::smatch& match = *it;
+        const std::string value = normaliseTagValue(match[1].str());
         const std::string key = "named:" + value;
         auto& acc = editableValues[key];
         if(acc.value.kind.empty()){
@@ -421,6 +575,11 @@ static void inspectEditableColourTags(
         acc.value.occurrences++;
         acc.files.insert(relativePath);
         editableFile.namedColourTags++;
+        if(acc.sampleSet.size() < 5){
+            const std::string s = extractSampleAfterTag(
+                utf8Text, (size_t)match.position() + (size_t)match.length());
+            if(!s.empty()) acc.sampleSet.insert(s);
+        }
     }
 
     std::istringstream lines(utf8Text);
@@ -536,10 +695,25 @@ static void buildPremadeCache(const std::string& location, PremadeCache& out){
     for(auto& [templateName, summary] : byName){
         auto& editableValues = editableByTemplate[templateName];
         auto& editableGradients = gradientsByTemplate[templateName];
+
+        // Collect every RGB value that is part of a gradient sequence so they
+        // can be excluded from the flat Colour Tags list below.
+        std::set<std::string> gradientColours;
+        for(const auto& [key, acc] : editableGradients){
+            (void)key;
+            std::istringstream ss(acc.gradient.sequence);
+            std::string step;
+            while(std::getline(ss, step, '|'))
+                if(!step.empty()) gradientColours.insert(step);
+        }
+
         summary.editableValues.reserve(editableValues.size());
         for(auto& [key, acc] : editableValues){
             (void)key;
+            if(acc.value.kind == "RGB" && gradientColours.count(acc.value.value))
+                continue; // already represented by a gradient entry
             acc.value.fileCount = (int)acc.files.size();
+            acc.value.samples.assign(acc.sampleSet.begin(), acc.sampleSet.end());
             summary.editableValues.push_back(std::move(acc.value));
         }
         summary.editableGradients.reserve(editableGradients.size());
@@ -596,6 +770,99 @@ static void launchRebuildThreadLocked(){
         }
         g_building = false;
     }).detach();
+}
+
+static std::vector<unsigned char> encodeTextFile(const TextFile& file){
+    std::vector<unsigned char> out;
+    if(file.encoding == EmbeddedEncoding::Utf16LeBom){
+        out.reserve(2 + file.text.size() * sizeof(wchar_t));
+        out.push_back(0xFF);
+        out.push_back(0xFE);
+        const auto* p = reinterpret_cast<const unsigned char*>(file.text.data());
+        out.insert(out.end(), p, p + file.text.size() * sizeof(wchar_t));
+    } else {
+        const std::string u8 = wideToUtf8(file.text);
+        if(file.encoding == EmbeddedEncoding::Utf8Bom){
+            out.push_back(0xEF);
+            out.push_back(0xBB);
+            out.push_back(0xBF);
+        }
+        out.insert(out.end(), u8.begin(), u8.end());
+    }
+    return out;
+}
+
+// Returns true for lines whose GER key ends with "_Title" (case-insensitive).
+// These are item/entry display-name lines and must never be recoloured.
+static bool isGerTitleLine(const char* lineData, size_t lineLen){
+    // Find the first '=' to locate the key
+    size_t eq = std::string::npos;
+    for(size_t i = 0; i < lineLen; ++i){
+        if(lineData[i] == '=') { eq = i; break; }
+    }
+    if(eq == std::string::npos || eq < 6) return false;
+    // Skip comment / section lines
+    if(lineData[0] == ';' || lineData[0] == '[') return false;
+    // Compare the 6 chars immediately before '=' against "_title"
+    const char* s = lineData + eq - 6;
+    return s[0] == '_' &&
+           std::tolower((unsigned char)s[1]) == 't' &&
+           std::tolower((unsigned char)s[2]) == 'i' &&
+           std::tolower((unsigned char)s[3]) == 't' &&
+           std::tolower((unsigned char)s[4]) == 'l' &&
+           std::tolower((unsigned char)s[5]) == 'e';
+}
+
+static std::string applyColourSubstitutions(
+    const std::string& text,
+    const std::map<std::string,std::string>& subs)
+{
+    if(subs.empty()) return text;
+
+    static const std::regex rgbTagRe(
+        R"(<\s*Color\s*:(?!\s*/)\s*R\s*=\s*([-+]?[0-9]*\.?[0-9]+)\s*G\s*=\s*([-+]?[0-9]*\.?[0-9]+)\s*B\s*=\s*([-+]?[0-9]*\.?[0-9]+)\s*>)",
+        std::regex::icase);
+
+    // Apply substitutions to one segment of text (no title-line logic)
+    auto subsSegment = [&](const std::string& seg) -> std::string {
+        std::string out;
+        out.reserve(seg.size());
+        size_t p = 0;
+        for(std::sregex_iterator it(seg.begin(), seg.end(), rgbTagRe), end; it != end; ++it){
+            const std::smatch& m = *it;
+            const size_t mpos = (size_t)m.position();
+            out.append(seg, p, mpos - p);
+            p = mpos + (size_t)m.length();
+            const double r = std::strtod(m[1].str().c_str(), nullptr);
+            const double g = std::strtod(m[2].str().c_str(), nullptr);
+            const double b = std::strtod(m[3].str().c_str(), nullptr);
+            const auto sub = subs.find(normaliseRgbValue(r, g, b));
+            if(sub != subs.end())
+                out += "<Color:" + sub->second + ">";
+            else
+                out.append(m[0].first, m[0].second);
+        }
+        out.append(seg, p);
+        return out;
+    };
+
+    // Process line by line: _Title key lines are copied verbatim
+    std::string result;
+    result.reserve(text.size());
+    size_t pos = 0;
+    while(pos < text.size()){
+        const size_t nlPos = text.find('\n', pos);
+        const size_t lineEnd = (nlPos == std::string::npos) ? text.size() : nlPos + 1;
+        const size_t lineLen = lineEnd - pos;
+
+        if(isGerTitleLine(text.data() + pos, lineLen))
+            result.append(text, pos, lineLen);
+        else
+            result += subsSegment(std::string(text.data() + pos, lineLen));
+
+        pos = lineEnd;
+    }
+    return result;
 }
 
 } // namespace
@@ -675,6 +942,18 @@ bool exportPremadeConfig(
         std::vector<unsigned char> bytes;
         if(!loadFileBytes(file.absolutePath, bytes))
             throw std::runtime_error("Failed to load premade file: " + file.absolutePath);
+
+        if(!options.colourSubstitutions.empty()){
+            TextFile textFile;
+            if(decodeTextFile(bytes, textFile)){
+                const std::string utf8 = wideToUtf8(textFile.text);
+                const std::string applied = applyColourSubstitutions(utf8, options.colourSubstitutions);
+                if(applied != utf8){
+                    textFile.text = utf8ToWide(applied);
+                    bytes = encodeTextFile(textFile);
+                }
+            }
+        }
 
         const std::filesystem::path outPath = std::filesystem::path(result.outputDir) / file.relativePath;
         std::filesystem::create_directories(outPath.parent_path());

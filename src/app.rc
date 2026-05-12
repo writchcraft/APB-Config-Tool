@@ -1,6 +1,8 @@
 #include "resource.h"
 #include <winres.h>
 
+IDI_APPICON ICON "..\\Assets\\Icon\\APBConfigTool.ico"
+
 VS_VERSION_INFO VERSIONINFO
  FILEVERSION 1,0,0,0
  PRODUCTVERSION 1,0,0,0

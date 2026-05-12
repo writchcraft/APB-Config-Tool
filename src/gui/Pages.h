@@ -2854,7 +2854,6 @@ struct PageSettings {
 struct PagePremadeConfigs {
     int templateIdx = 0;
     char outputDir[MAX_PATH] = {};
-    ThreadLog log;
     std::atomic<bool> running{false};
     std::atomic<bool> cancelRequested{false};
     std::string lastOutputDir;
@@ -2863,6 +2862,19 @@ struct PagePremadeConfigs {
     int lastEditableTemplateIdx = -1;
     std::map<std::string, std::string>         namedOverrides;
     std::map<std::string, std::array<float,3>> rgbOverrides;
+
+    struct GradientOverrideState {
+        bool enabled = false;
+        bool seeded  = false;
+        GradientType outputType = GradientType::Smooth;
+        std::string origStartValue;
+        std::string origMidValue;
+        std::string origEndValue;
+        std::array<float,3> startRgb = {1.f,1.f,1.f};
+        std::array<float,3> midRgb   = {0.5f,0.5f,0.5f};
+        std::array<float,3> endRgb   = {1.f,1.f,1.f};
+    };
+    std::map<std::string, GradientOverrideState> gradientOverrides;
 
     bool isActionRunning() const { return running.load(); }
 
@@ -2877,7 +2889,6 @@ struct PagePremadeConfigs {
     void cancelAction(){
         if(!running.load()) return;
         cancelRequested = true;
-        log.append("Cancelling premade config export...");
     }
 
     void seedDefaultOutput(){
@@ -2897,37 +2908,83 @@ struct PagePremadeConfigs {
     void startAction(){
         if(!canStartAction()) return;
 
-        const auto& summaries = premadeConfigSummaries();
-        const std::string templateName = summaries[(size_t)templateIdx].name;
-        const std::string outputRoot = outputDir;
+        const auto summaries = premadeConfigSummaries();
+
+        PremadeConfigExportOptions options;
+        options.templateName = summaries[(size_t)templateIdx].name;
+        options.outputDir    = outputDir;
+
+        // Build colour substitutions from enabled gradient overrides
+        const auto& summary = summaries[(size_t)templateIdx];
+        for(const auto& grad : summary.editableGradients){
+            if(grad.sequence.empty()) continue;
+            auto it = gradientOverrides.find(grad.sequence);
+            if(it == gradientOverrides.end() || !it->second.enabled) continue;
+            const GradientOverrideState& ov = it->second;
+
+            // Split sequence into individual step values
+            std::vector<std::string> steps;
+            {
+                std::istringstream ss(grad.sequence);
+                std::string s;
+                while(std::getline(ss, s, '|'))
+                    if(!s.empty()) steps.push_back(s);
+            }
+            const int n = (int)steps.size();
+            if(n < 1) continue;
+
+            if(ov.outputType == GradientType::Stepped){
+                // Map each unique palette colour (in order of first appearance) to an
+                // evenly-spaced point between start and end, preserving stepped structure.
+                std::vector<std::string> palette;
+                for(const auto& step : steps){
+                    bool found = false;
+                    for(const auto& p : palette) if(p == step){ found = true; break; }
+                    if(!found) palette.push_back(step);
+                }
+                const int nu = (int)palette.size();
+                for(int ui = 0; ui < nu; ++ui){
+                    const float t = (nu > 1) ? (float)ui / (float)(nu - 1) : 0.f;
+                    const float nr = ov.startRgb[0] + (ov.endRgb[0] - ov.startRgb[0]) * t;
+                    const float ng = ov.startRgb[1] + (ov.endRgb[1] - ov.startRgb[1]) * t;
+                    const float nb = ov.startRgb[2] + (ov.endRgb[2] - ov.startRgb[2]) * t;
+                    char buf[64];
+                    std::snprintf(buf, sizeof(buf), "R=%.3f G=%.3f B=%.3f", nr, ng, nb);
+                    options.colourSubstitutions[palette[(size_t)ui]] = buf;
+                }
+            } else {
+                for(int i = 0; i < n; ++i){
+                    const float t = (n > 1) ? (float)i / (float)(n - 1) : 0.f;
+                    float nr, ng, nb;
+                    if(ov.outputType == GradientType::Triple){
+                        const float t2 = (t <= 0.5f) ? t * 2.f : (t - 0.5f) * 2.f;
+                        const auto& base = (t <= 0.5f) ? ov.startRgb : ov.midRgb;
+                        const auto& dest = (t <= 0.5f) ? ov.midRgb   : ov.endRgb;
+                        nr = base[0] + (dest[0] - base[0]) * t2;
+                        ng = base[1] + (dest[1] - base[1]) * t2;
+                        nb = base[2] + (dest[2] - base[2]) * t2;
+                    } else {
+                        nr = ov.startRgb[0] + (ov.endRgb[0] - ov.startRgb[0]) * t;
+                        ng = ov.startRgb[1] + (ov.endRgb[1] - ov.startRgb[1]) * t;
+                        nb = ov.startRgb[2] + (ov.endRgb[2] - ov.startRgb[2]) * t;
+                    }
+                    char buf[64];
+                    std::snprintf(buf, sizeof(buf), "R=%.3f G=%.3f B=%.3f", nr, ng, nb);
+                    options.colourSubstitutions[steps[(size_t)i]] = buf;
+                }
+            }
+        }
 
         cancelRequested = false;
-        log.clear();
-        log.append("Starting premade config export...");
         running = true;
 
-        std::thread([this, templateName, outputRoot](){
+        std::thread([this, options](){
             try{
-                PremadeConfigExportOptions options;
-                options.templateName = templateName;
-                options.outputDir = outputRoot;
-
                 PremadeConfigExportResult result;
-                exportPremadeConfig(options, result,
-                    [this](const std::string& line){ log.append(line); },
-                    &cancelRequested);
-
-                if(result.cancelled){
-                    log.append("Premade config export cancelled.");
-                } else {
+                exportPremadeConfig(options, result, nullptr, &cancelRequested);
+                if(!result.cancelled)
                     lastOutputDir = result.outputDir;
-                    std::ostringstream msg;
-                    msg << "Exported " << result.filesWritten << " files.";
-                    log.append(msg.str());
-                }
-            }catch(const std::exception& e){
-                log.append(std::string("Error: ") + e.what());
-            }
+            }catch(...){}
             running = false;
         }).detach();
     }
@@ -2951,6 +3008,140 @@ struct PagePremadeConfigs {
         return false;
     }
 
+    static const char* namedTagDescription(const std::string& name){
+        if(name == "None")                        return "Renders text transparent / invisible";
+        // Action / mission
+        if(name == "Action_Enemy")                return "Enemy player indicators during missions";
+        if(name == "Action_Enemy_Assist")         return "Enemy assist player indicators during missions";
+        if(name == "Action_Team")                 return "Team / ally indicators during missions";
+        if(name == "Action_Team_Assist")          return "Team assist indicators during missions";
+        // Faction
+        if(name == "Blue_Enforcer")               return "Enforcer faction";
+        if(name == "Red_Criminal")                return "Criminal faction";
+        // Task markers
+        if(name == "Black_TaskMarker")            return "Task / objective marker";
+        if(name == "Blue_TaskMarker")             return "Task / objective marker";
+        if(name == "Green_TaskMarker")            return "Task / objective marker";
+        if(name == "Yellow_TaskMarker")           return "Task / objective marker";
+        // Chat channels
+        if(name == "Chat_Clan")                   return "Clan chat channel";
+        if(name == "Chat_Combat")                 return "Combat event messages";
+        if(name == "Chat_Dev")                    return "Developer / staff announcements";
+        if(name == "Chat_District")               return "District-wide chat";
+        if(name == "Chat_GM")                     return "Game Master messages";
+        if(name == "Chat_Group")                  return "Group / squad chat";
+        if(name == "Chat_Helper")                 return "Helper role chat";
+        if(name == "Chat_Mission")                return "Mission-related chat messages";
+        if(name == "Chat_Name")                   return "Player name shown in chat";
+        if(name == "Chat_Officer")                return "Clan officer chat";
+        if(name == "Chat_Premium")                return "Premium / Armas subscriber chat";
+        if(name == "Chat_Say")                    return "Local / say chat";
+        if(name == "Chat_System")                 return "System / server messages";
+        if(name == "Chat_TGM")                    return "Trial Game Master messages";
+        if(name == "Chat_Team")                   return "Team chat channel";
+        if(name == "Chat_Tutorial")               return "Tutorial guidance messages";
+        if(name == "Chat_Vehicle")                return "Vehicle-related chat messages";
+        if(name == "Chat_Whisper")                return "Private / whisper messages";
+        if(name == "Chat_Yell")                   return "Yell / zone-wide chat";
+        // Contacts / NPC
+        if(name == "Contact")                     return "Contact NPC names";
+        // Electronic District icons
+        if(name == "ED_garage")                   return "Electronic District \xe2\x80\x93 Garage";
+        if(name == "ED_marketplace")              return "Electronic District \xe2\x80\x93 Marketplace";
+        if(name == "ED_music")                    return "Electronic District \xe2\x80\x93 Music";
+        if(name == "ED_persona")                  return "Electronic District \xe2\x80\x93 Persona / character";
+        if(name == "ED_symbol")                   return "Electronic District \xe2\x80\x93 Symbol editor";
+        if(name == "ED_wardrobe")                 return "Electronic District \xe2\x80\x93 Wardrobe / clothing";
+        // HUD messages
+        if(name == "HUDMessage_Default")          return "Default HUD notification messages";
+        if(name == "HUDMessage_Error")            return "Error / failure HUD notifications";
+        if(name == "HUDMessage_Mission")          return "Mission update HUD notifications";
+        if(name == "HUDMessage_TutorialText")     return "Tutorial HUD text";
+        if(name == "HUDMessage_VIP")              return "VIP / priority HUD notifications";
+        // Misc UI
+        if(name == "Mailbox")                     return "Mailbox / inbox indicator";
+        if(name == "Ceremony_Highlight")          return "Ceremony and event highlight text";
+        if(name == "Bronze")                      return "Bronze / third-place ranking";
+        if(name == "Orange_APB")                  return "APB brand orange";
+        if(name == "ScoreBreakdown_Cash")         return "Cash / money values in score breakdown";
+        if(name == "ScoreBreakdown_NormalValue")  return "Standard values in score breakdown";
+        if(name == "ScoreBreakdown_NegativeValue")return "Negative / loss values in score breakdown";
+        if(name == "Scoreboard_LocalPlayer")      return "Local player row on the scoreboard";
+        if(name == "Scoreboard_Opponents")        return "Opponent rows on the scoreboard";
+        if(name == "Tutorial_KeyPress")           return "Key press prompts in tutorials";
+        if(name == "Valentine_Pink")              return "Valentine's Day / seasonal event";
+        if(name == "Yellow_CSA")                  return "CSA (Civilian Support Agency) colour";
+        if(name == "GroupHUD_OutOfDistrict")      return "Group HUD \xe2\x80\x93 member out of district";
+        if(name == "openworld_marker")            return "Open world map marker";
+        if(name == "Halloween_Necrocite")         return "Halloween event / Necrocite";
+        if(name == "StageText")                   return "Mission stage text overlay";
+        return nullptr;
+    }
+
+    static void drawColourTagTooltip(const PremadeConfigEditableValue& value){
+        ImGui::BeginTooltip();
+        if(value.kind == "Named"){
+            const PageLocalization::NamedTagRow* found = nullptr;
+            for(const auto& row : PageLocalization::NAMED_TAG_ROWS)
+                if(value.value == row.name){ found = &row; break; }
+
+            // Header: swatch + tag name
+            ImVec4 swatchCol = found
+                ? ImVec4{found->r, found->g, found->b, std::max(found->a, 0.15f)}
+                : ImVec4{0.5f, 0.5f, 0.5f, 1.f};
+            ImGui::ColorButton("##ttip_sw", swatchCol,
+                ImGuiColorEditFlags_NoPicker | ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoBorder,
+                {48.f, 24.f});
+            ImGui::SameLine();
+            ImGui::TextUnformatted(value.value.c_str());
+
+            // Samples: the actual text this colour is applied to
+            if(!value.samples.empty()){
+                ImGui::Separator();
+                for(const auto& s : value.samples)
+                    ImGui::BulletText("%s", s.c_str());
+            }
+
+            // Reference codes
+            if(found){
+                if((found->codeLine1 && found->codeLine1[0]) || (found->codeLine2 && found->codeLine2[0])){
+                    ImGui::Separator();
+                    if(found->codeLine1 && found->codeLine1[0])
+                        ImGui::TextColored(Col::SUBTEXT, "%s", found->codeLine1);
+                    if(found->codeLine2 && found->codeLine2[0]){
+                        char buf[128];
+                        std::snprintf(buf, sizeof(buf), "<Color:%s>", found->codeLine2);
+                        ImGui::TextColored(Col::SUBTEXT, "%s", buf);
+                    }
+                }
+            }
+        } else {
+            float rgb[3];
+            parseRgbValue(value.value, rgb);
+            const int ri = std::clamp((int)(rgb[0] * 255.f + 0.5f), 0, 255);
+            const int gi = std::clamp((int)(rgb[1] * 255.f + 0.5f), 0, 255);
+            const int bi = std::clamp((int)(rgb[2] * 255.f + 0.5f), 0, 255);
+            char hex[16];
+            std::snprintf(hex, sizeof(hex), "#%02X%02X%02X", ri, gi, bi);
+
+            ImGui::ColorButton("##ttip_sw", {rgb[0], rgb[1], rgb[2], 1.f},
+                ImGuiColorEditFlags_NoPicker | ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoBorder,
+                {48.f, 24.f});
+            ImGui::SameLine();
+            ImGui::BeginGroup();
+            ImGui::TextUnformatted(value.value.c_str());
+            ImGui::TextColored(Col::SUBTEXT, "%s", hex);
+            ImGui::EndGroup();
+
+            if(!value.samples.empty()){
+                ImGui::Separator();
+                for(const auto& s : value.samples)
+                    ImGui::BulletText("%s", s.c_str());
+            }
+        }
+        ImGui::EndTooltip();
+    }
+
     void draw(){
         seedDefaultOutput();
 
@@ -2958,6 +3149,7 @@ struct PagePremadeConfigs {
             lastEditableTemplateIdx = templateIdx;
             namedOverrides.clear();
             rgbOverrides.clear();
+            gradientOverrides.clear();
         }
 
         const auto& summaries = premadeConfigSummaries();
@@ -3075,6 +3267,8 @@ struct PagePremadeConfigs {
                             ImGui::TableSetColumnIndex(1);
                             ImGui::AlignTextToFramePadding();
                             ImGui::TextUnformatted(value.value.c_str());
+                            if(ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                                drawColourTagTooltip(value);
 
                             ImGui::TableSetColumnIndex(2);
                             ImGui::AlignTextToFramePadding();
@@ -3094,30 +3288,122 @@ struct PagePremadeConfigs {
 
                 if(!summary.editableGradients.empty()){
                     SubLabel("Gradients");
-                    const float gradH = std::min((int)summary.editableGradients.size(), 4) * 26.f + 8.f;
-                    ImGui::BeginChild("##premadegradients", {0.f, gradH}, true);
-                    for(const auto& gradient : summary.editableGradients){
-                        ImGui::TextUnformatted(gradient.preview.c_str());
-                        ImGui::SameLine();
-                        ImGui::TextColored(Col::SUBTEXT, "  [%s | %d steps | %d hits / %d files]",
-                            gradient.kind.c_str(), gradient.steps,
-                            gradient.occurrences, gradient.fileCount);
+                    static const char* kTypeItems[] = { "Smooth", "Triple", "Stepped" };
+                    const float lineH  = ImGui::GetFrameHeightWithSpacing();
+                    const float cardH  = lineH * 2.f + 6.f;
+                    const int   shown  = std::min((int)summary.editableGradients.size(), 4);
+                    if(ImGui::BeginChild("##gradscroll", {0.f, shown * cardH + 4.f}, false)){
+                        for(int gi = 0; gi < (int)summary.editableGradients.size(); ++gi){
+                            const auto& grad = summary.editableGradients[(size_t)gi];
+                            ImGui::PushID(gi);
+
+                            // Seed override state
+                            auto& ov = gradientOverrides[grad.sequence];
+                            if(!ov.seeded){
+                                ov.seeded = true;
+                                ov.outputType = grad.type;
+                                const size_t pipe = grad.sequence.find('|');
+                                ov.origStartValue = (pipe != std::string::npos)
+                                    ? grad.sequence.substr(0, pipe) : grad.sequence;
+                                const size_t lastPipe = grad.sequence.rfind('|');
+                                ov.origEndValue = (lastPipe != std::string::npos)
+                                    ? grad.sequence.substr(lastPipe + 1) : grad.sequence;
+                                ov.origMidValue = grad.midValue;
+                                float tmp[3] = {0.5f,0.5f,0.5f};
+                                parseRgbValue(ov.origStartValue, tmp);
+                                ov.startRgb = {tmp[0],tmp[1],tmp[2]};
+                                parseRgbValue(ov.origEndValue, tmp);
+                                ov.endRgb   = {tmp[0],tmp[1],tmp[2]};
+                                if(!grad.midValue.empty()){
+                                    parseRgbValue(grad.midValue, tmp);
+                                    ov.midRgb = {tmp[0],tmp[1],tmp[2]};
+                                }
+                            }
+
+                            // ── Row 1: detection info ─────────────────────────
+                            ImGui::Checkbox("##grov", &ov.enabled);
+                            if(ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                                ImGui::SetTooltip("Enable gradient override for export");
+                            ImGui::SameLine(0.f, 6.f);
+
+                            // Type badge (coloured)
+                            const ImVec4 typeCol =
+                                (grad.type == GradientType::Triple)  ? ImVec4{1.f,0.7f,0.2f,1.f} :
+                                (grad.type == GradientType::Stepped) ? ImVec4{0.6f,0.4f,1.f,1.f} :
+                                                                       ImVec4{0.3f,0.8f,1.f,1.f};
+                            const char* typeLabel =
+                                (grad.type == GradientType::Triple)  ? "Triple"  :
+                                (grad.type == GradientType::Stepped) ? "Stepped" : "Smooth";
+                            ImGui::TextColored(typeCol, "%s", typeLabel);
+                            ImGui::SameLine(0.f, 8.f);
+
+                            // Original colour swatches
+                            {
+                                float cs[3]={0.5f,0.5f,0.5f}, ce[3]={0.5f,0.5f,0.5f};
+                                parseRgbValue(ov.origStartValue, cs);
+                                parseRgbValue(ov.origEndValue,   ce);
+                                ImGui::ColorButton("##ogs",{cs[0],cs[1],cs[2],1.f},
+                                    ImGuiColorEditFlags_NoPicker|ImGuiColorEditFlags_NoTooltip|ImGuiColorEditFlags_NoBorder,{14.f,14.f});
+                                if(grad.type == GradientType::Triple && !ov.origMidValue.empty()){
+                                    float cm[3]={0.5f,0.5f,0.5f};
+                                    parseRgbValue(ov.origMidValue, cm);
+                                    ImGui::SameLine(0.f,2.f);
+                                    ImGui::ColorButton("##ogm",{cm[0],cm[1],cm[2],1.f},
+                                        ImGuiColorEditFlags_NoPicker|ImGuiColorEditFlags_NoTooltip|ImGuiColorEditFlags_NoBorder,{14.f,14.f});
+                                }
+                                ImGui::SameLine(0.f,2.f);
+                                ImGui::TextUnformatted("\xe2\x86\x92");
+                                ImGui::SameLine(0.f,2.f);
+                                ImGui::ColorButton("##oge",{ce[0],ce[1],ce[2],1.f},
+                                    ImGuiColorEditFlags_NoPicker|ImGuiColorEditFlags_NoTooltip|ImGuiColorEditFlags_NoBorder,{14.f,14.f});
+                            }
+                            ImGui::SameLine(0.f, 8.f);
+
+                            // Sample text + stats pushed right
+                            const char* sampleLabel = grad.sampleText.empty()
+                                ? grad.preview.c_str() : grad.sampleText.c_str();
+                            ImGui::TextUnformatted(sampleLabel);
+                            ImGui::SameLine();
+                            const float statsX = ImGui::GetContentRegionMax().x - 90.f;
+                            if(ImGui::GetCursorPosX() < statsX) ImGui::SetCursorPosX(statsX);
+                            ImGui::TextColored(Col::SUBTEXT, "%d steps | %dx", grad.steps, grad.occurrences);
+
+                            // ── Row 2: replacement controls ───────────────────
+                            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 22.f); // align under checkbox
+                            if(!ov.enabled) ImGui::BeginDisabled();
+
+                            // Output type combo
+                            ImGui::SetNextItemWidth(76.f);
+                            int typeIdx = (int)ov.outputType;
+                            if(ImGui::Combo("##outtype", &typeIdx, kTypeItems, 3))
+                                ov.outputType = (GradientType)typeIdx;
+                            ImGui::SameLine(0.f, 6.f);
+                            ImGui::TextColored(Col::SUBTEXT, "Start");
+                            ImGui::SameLine(0.f, 4.f);
+                            ColorPickerButton("##grs", ov.startRgb.data());
+                            if(ov.outputType == GradientType::Triple){
+                                ImGui::SameLine(0.f, 6.f);
+                                ImGui::TextColored(Col::SUBTEXT, "Mid");
+                                ImGui::SameLine(0.f, 4.f);
+                                ColorPickerButton("##grm", ov.midRgb.data());
+                            }
+                            ImGui::SameLine(0.f, 6.f);
+                            ImGui::TextColored(Col::SUBTEXT, "End");
+                            ImGui::SameLine(0.f, 4.f);
+                            ColorPickerButton("##gre", ov.endRgb.data());
+
+                            if(!ov.enabled) ImGui::EndDisabled();
+
+                            ImGui::PopID();
+                            ImGui::Spacing();
+                            ImGui::Separator();
+                            ImGui::Spacing();
+                        }
                     }
                     ImGui::EndChild();
                     ImGui::Spacing();
                 }
 
-                if(!summary.editableFiles.empty()){
-                    SubLabel("Tagged files");
-                    ImGui::BeginChild("##premadeeditablefiles", {0.f, 80.f}, true);
-                    for(const auto& file : summary.editableFiles){
-                        ImGui::TextUnformatted(file.relativePath.c_str());
-                        ImGui::SameLine();
-                        ImGui::TextColored(Col::SUBTEXT, "  [%dN / %dRGB / %dG]",
-                            file.namedColourTags, file.rgbColourTags, file.gradientRuns);
-                    }
-                    ImGui::EndChild();
-                }
             } else if(!isPremadeCacheBuilding()){
                 SectionNote("No APB colour tags or gradients were detected in this template.");
             }
@@ -3152,10 +3438,6 @@ struct PagePremadeConfigs {
                 src.empty() ? "(not set)" : src.c_str(),
                 exp.empty() ? "(no folder set)" : exp.c_str());
         }
-
-        SectionLabel("Log");
-        const std::string logText = log.get();
-        ReadOnlyLogBox("##premadelog", logText, {-1.f, -1.f});
 
         if(!lastOutputDir.empty()){
             ImGui::Spacing();
