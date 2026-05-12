@@ -171,6 +171,25 @@ static bool isTitleItem(const json& item) {
     return infraCategory.is_number() && int(infraCategory.get<double>()) == 137;
 }
 
+static std::string correctModName(const std::string& name) {
+    static const std::pair<std::string, std::string> corrections[] = {
+        {"Eagle Eyes",    "Reflex Sight"},
+        {"Spray and Pray","Cooling Jacket"},
+        {"Super Mag",     "Extended Magazine"},
+        {"Rifling",       "Improved Rifling"},
+        {"Short Sighted", "Hunting Sight"},
+        {"Quick Fingers", "Magazine Pull"},
+        {"Damping",       "Heavy Barrel"},
+    };
+    for (const auto& [stub, correct] : corrections) {
+        if (name.rfind(stub, 0) != 0) continue;
+        const size_t len = stub.size();
+        if (name.size() == len || name[len] == ' ' || name[len] == ':')
+            return correct + name.substr(len);
+    }
+    return name;
+}
+
 static std::string shortEquipmentAlias(const std::string& roleKey, const std::string& rewardName) {
     static const std::map<std::string, std::string> globalAliases = {
         {"GA5 5 Liter Can", "Gas Can 2"},
@@ -226,9 +245,12 @@ static std::string normaliseRewardName(
 {
     std::string name = stripUnlockPrefix(item.value("sDisplayName", ""));
     if (name.empty()) return {};
-    if (useShortEquipmentNames) {
+    const bool isEquipmentRole = roleKey.rfind("Role2_", 0) == 0 || roleKey.rfind("Role21_", 0) == 0;
+    if (isEquipmentRole && useShortEquipmentNames) {
         const std::string alias = shortEquipmentAlias(roleKey, name);
         if (!alias.empty()) name = alias;
+    } else if (!isEquipmentRole) {
+        name = correctModName(name);
     }
     if (isTitleItem(item) && name.find("(Title)") == std::string::npos)
         name += " (Title)";
@@ -258,8 +280,9 @@ static std::vector<std::string> collectRewardNames(
             addName(normaliseRewardName(item, roleKey, useShortEquipmentNames));
     }
 
+    const bool isEquipmentRole = roleKey.rfind("Role2_", 0) == 0 || roleKey.rfind("Role21_", 0) == 0;
     const json& childItems = reward["eChildPackage"]["eItems"];
-    if (childItems.is_array() && !childItems.empty()) {
+    if (isEquipmentRole && childItems.is_array() && !childItems.empty()) {
         for (const auto& item : childItems) {
             std::string name = stripUnlockPrefix(item.value("sDisplayName", ""));
             if (name.empty()) continue;

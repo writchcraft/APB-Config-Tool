@@ -315,6 +315,7 @@ static std::string buildUnlocksDescription(const json& contact) {
         wroteAny = true;
     }
 
+    if (wroteAny) out << newline << newline << newline << newline << newline;
     return wroteAny ? out.str() : std::string{};
 }
 
