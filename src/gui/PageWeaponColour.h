@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cstring>
 #include <map>
+#include <numeric>
 #include <filesystem>
 #include <sstream>
 #include <string>
@@ -42,6 +43,8 @@ struct PageWeaponColour {
 
     char filePath[MAX_PATH] = {};
     char inventoryIntPath[MAX_PATH] = {};
+    char shopGerPath[MAX_PATH] = {};
+    char customOutputPath[MAX_PATH] = {};
     char weaponSearch[256] = {};
     int fontIdx = 0; // legacy shared default for config migration and new rule defaults
     int specificSortIdx = 1;
@@ -51,7 +54,7 @@ struct PageWeaponColour {
     float gradStart[3] = {1.f,1.f,1.f}; // legacy config compatibility
     float gradEnd[3]   = {1.f,1.f,1.f}; // legacy config compatibility
     char ignoreList[8192] = {};
-    char presetName[128] = "Custom";
+    int quickPresetIdx = 0; // 0=Custom, 1=Writchcraft, 2=Spellbound
     int presetModeIdx = 2;
     float presetSolid[3] = {1.f,1.f,1.f};
     float presetStepped[6][3] = {
@@ -71,6 +74,7 @@ struct PageWeaponColour {
     std::string inventoryScanStatus = "Scan InventoryItemTypes.INT to load specific weapons.";
     bool inventoryScanPending = false;
     bool autoDetectPending = true;
+    bool categoryOrderPending = true;
 
     std::vector<std::string> fonts;
     std::vector<GunTypeDefinition> gunTypes;
@@ -79,6 +83,7 @@ struct PageWeaponColour {
 
     static constexpr const char* MODES[] = {"SOLID","Stepped","Smooth","Triple Gradient"};
     static constexpr const char* SPECIFIC_SORTS[] = {"APB Class Order","Weapon Name"};
+    static constexpr const char* PRESET_NAMES[] = {"Custom","Writchcraft","Spellbound"};
 
     PageWeaponColour(){
         fonts = availableFonts();
@@ -121,11 +126,15 @@ struct PageWeaponColour {
     }
 
     std::string computedOutputPath() const{
-        if(!filePath[0]) return {};
+        return customOutputPath[0] ? std::string(customOutputPath) : std::string{};
+    }
+
+    std::string resolvedOutputPath() const{
+        if(!inventoryIntPath[0]) return {};
         namespace fs = std::filesystem;
-        fs::path input(filePath);
-        if(input.empty()) return {};
-        return (input.parent_path() / "Output" / input.filename()).string();
+        const std::string dir = customOutputPath[0] ? std::string(customOutputPath) : DownloadsDir();
+        if(dir.empty()) return {};
+        return (fs::path(dir) / fs::path(inventoryIntPath).filename()).string();
     }
 
     int categoryOrder(const std::string& categoryToken) const{
@@ -360,6 +369,100 @@ struct PageWeaponColour {
         }
     }
 
+    void loadCategoryOrder(){
+        namespace fs = std::filesystem;
+        std::string resolvedShopPath = shopGerPath[0] ? std::string(shopGerPath) : std::string{};
+        if(resolvedShopPath.empty()){
+            if(inventoryIntPath[0]){
+                std::error_code ec;
+                fs::path locDir = fs::path(inventoryIntPath).parent_path();
+                for(const char* name : {"ShopUIFilters.GER","ShopUIFilters.INT","ShopUIFilters.ger","ShopUIFilters.int"}){
+                    fs::path candidate = locDir / name;
+                    if(fs::exists(candidate, ec)){ resolvedShopPath = candidate.string(); break; }
+                }
+                if(resolvedShopPath.empty()){
+                    fs::path gerDir = locDir.parent_path() / "GER";
+                    fs::path candidate = gerDir / "ShopUIFilters.GER";
+                    if(fs::exists(candidate, ec)) resolvedShopPath = candidate.string();
+                }
+            }
+            if(resolvedShopPath.empty()) resolvedShopPath = DetectApbLocalizationFile("GER", "ShopUIFilters.GER");
+            if(resolvedShopPath.empty()) resolvedShopPath = DetectApbIntFile("ShopUIFilters.GER");
+        }
+
+        std::map<std::string,int> orderMap;
+        if(!resolvedShopPath.empty())
+            orderMap = apb::parseShopUIFilterOrder(resolvedShopPath);
+        if(orderMap.empty())
+            orderMap = apb::defaultShopUIFilterOrder();
+
+        const int n = (int)gunTypes.size();
+        std::vector<int> idx(n);
+        std::iota(idx.begin(), idx.end(), 0);
+        std::stable_sort(idx.begin(), idx.end(), [&](int a, int b){
+            auto ia = orderMap.find(gunTypes[a].categoryToken);
+            auto ib = orderMap.find(gunTypes[b].categoryToken);
+            int va = (ia != orderMap.end()) ? ia->second : n + a;
+            int vb = (ib != orderMap.end()) ? ib->second : n + b;
+            return va < vb;
+        });
+
+        std::vector<GunTypeDefinition> newTypes;
+        std::vector<CategoryState> newCats;
+        newTypes.reserve(n);
+        newCats.reserve(n);
+        for(int i : idx){
+            newTypes.push_back(std::move(gunTypes[i]));
+            newCats.push_back(std::move(categories[i]));
+        }
+        gunTypes    = std::move(newTypes);
+        categories  = std::move(newCats);
+        specificCategoryFilterIdx = 0;
+    }
+
+    void loadNamedPresetColours(){
+        if(quickPresetIdx == 0) return;
+        const RGB start = (quickPresetIdx == 1) ? apb::WRITCH_START() : apb::SPELL_START();
+        const RGB end   = (quickPresetIdx == 1) ? apb::WRITCH_END()   : apb::SPELL_END();
+        presetSmoothStart[0]=(float)start.r; presetSmoothStart[1]=(float)start.g; presetSmoothStart[2]=(float)start.b;
+        presetSmoothEnd[0]  =(float)end.r;   presetSmoothEnd[1]  =(float)end.g;   presetSmoothEnd[2]  =(float)end.b;
+        const RGB mid = apb::lerpRGB(start, end, 0.5);
+        presetTripleStart[0]=(float)start.r; presetTripleStart[1]=(float)start.g; presetTripleStart[2]=(float)start.b;
+        presetTripleMid[0]  =(float)mid.r;   presetTripleMid[1]  =(float)mid.g;   presetTripleMid[2]  =(float)mid.b;
+        presetTripleEnd[0]  =(float)end.r;   presetTripleEnd[1]  =(float)end.g;   presetTripleEnd[2]  =(float)end.b;
+        for(int i = 0; i < 6; ++i){
+            const RGB c = apb::lerpRGB(start, end, double(i)/5.0);
+            presetStepped[i][0]=(float)c.r; presetStepped[i][1]=(float)c.g; presetStepped[i][2]=(float)c.b;
+        }
+    }
+
+    void applyNamedPresetToCategories(bool enabledOnly){
+        const auto map = apb::presetByIndex(quickPresetIdx - 1);
+        for(int i = 0; i < (int)categories.size(); ++i){
+            auto& st = categories[i];
+            if(enabledOnly && !st.enabled) continue;
+            auto it = map.find(gunTypes[i].categoryToken);
+            if(it == map.end()) continue;
+            st.modeIdx  = 0;
+            st.solid[0] = (float)it->second.r;
+            st.solid[1] = (float)it->second.g;
+            st.solid[2] = (float)it->second.b;
+        }
+    }
+
+    void applyNamedPresetToWeapons(){
+        const auto map = apb::presetByIndex(quickPresetIdx - 1);
+        for(auto& st : specificWeapons){
+            if(!st.enabled) continue;
+            auto it = map.find(st.categoryToken);
+            if(it == map.end()) continue;
+            st.modeIdx  = 0;
+            st.solid[0] = (float)it->second.r;
+            st.solid[1] = (float)it->second.g;
+            st.solid[2] = (float)it->second.b;
+        }
+    }
+
     void drawPresetConfig(){
         SectionLabel("Quick Preset");
         SectionNote("Build one palette here, then stamp it onto category rules or selected weapon overrides.");
@@ -368,8 +471,17 @@ struct PageWeaponColour {
 
         if(BeginSectionTable("##wcPresetGrid", 96.f, 0.f)){
             BeginSectionRow("Preset");
-            ImGui::SetNextItemWidth(220.f);
-            ImGui::InputText("##wcPresetName", presetName, sizeof(presetName));
+            ImGui::SetNextItemWidth(200.f);
+            if(ImGui::BeginCombo("##wcPresetSelect", PRESET_NAMES[quickPresetIdx])){
+                for(int p = 0; p < 3; ++p){
+                    if(ImGui::Selectable(PRESET_NAMES[p], quickPresetIdx == p)){
+                        quickPresetIdx = p;
+                        loadNamedPresetColours();
+                    }
+                    if(quickPresetIdx == p) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
             ImGui::SameLine();
             ImGui::TextUnformatted("Mode");
             ImGui::SameLine();
@@ -384,24 +496,41 @@ struct PageWeaponColour {
             }
 
             BeginSectionRow("Colours");
-            drawPresetColourControls();
+            if(quickPresetIdx > 0 && presetModeIdx == 0){
+                ImGui::TextColored(Col::SUBTEXT, "Per-category colours applied when stamped.");
+            } else {
+                drawPresetColourControls();
+            }
             EndSectionTable();
         }
 
         ImGui::Spacing();
+        const bool usePerCat = (quickPresetIdx > 0 && presetModeIdx == 0);
         if(ImGui::Button("Apply to Enabled Categories##wcPreset", {200.f, 28.f})){
-            for(auto& st : categories)
-                if(st.enabled) applyPresetToRule(st);
+            if(usePerCat){
+                applyNamedPresetToCategories(true);
+            } else {
+                for(auto& st : categories)
+                    if(st.enabled) applyPresetToRule(st);
+            }
         }
         ImGui::SameLine();
         if(ImGui::Button("Apply to All Categories##wcPreset", {176.f, 28.f})){
-            for(auto& st : categories)
-                applyPresetToRule(st);
+            if(usePerCat){
+                applyNamedPresetToCategories(false);
+            } else {
+                for(auto& st : categories)
+                    applyPresetToRule(st);
+            }
         }
         ImGui::SameLine();
         if(ImGui::Button("Apply to Selected Weapons##wcPreset", {190.f, 28.f})){
-            for(auto& st : specificWeapons)
-                if(st.enabled) applyPresetToRule(st);
+            if(usePerCat){
+                applyNamedPresetToWeapons();
+            } else {
+                for(auto& st : specificWeapons)
+                    if(st.enabled) applyPresetToRule(st);
+            }
         }
         ImGui::TextColored(Col::SUBTEXT, "This preset is just a shortcut for stamping colour rules.");
 
@@ -481,7 +610,7 @@ struct PageWeaponColour {
     void drawFileSettingsSection(){
         SectionLabel("File Settings");
         ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::ITEM_BG);
-        ImGui::BeginChild("##wcFileConfig", {0.f, 96.f}, true);
+        ImGui::BeginChild("##wcFileConfig", {0.f, 140.f}, true);
         if(BeginSectionTable("##wcFileInventoryGrid", 126.f, 86.f)){
             BeginSectionRow("InventoryItemTypes");
             ImGui::SetNextItemWidth(-FLT_MIN);
@@ -489,22 +618,38 @@ struct PageWeaponColour {
             NextSectionAction();
             if(ImGui::Button("Browse##wcInventoryMain")){
                 std::string s;
-                if(BrowseFile(s, "INT Files\0*.int;*.INT\0All Files\0*.*\0\0"))
+                if(BrowseFile(s, "All Files\0*.*\0\0")){
                     std::snprintf(inventoryIntPath, sizeof(inventoryIntPath), "%s", s.c_str());
+                    categoryOrderPending = true;
+                    inventoryScanPending = true;
+                }
             }
 
-            BeginSectionRow("Output");
-            char outputPathBuf[MAX_PATH * 2] = {};
-            const std::string outputPath = computedOutputPath();
-            if(!outputPath.empty())
-                std::snprintf(outputPathBuf, sizeof(outputPathBuf), "%s", outputPath.c_str());
+            BeginSectionRow("ShopUIFilters");
             ImGui::SetNextItemWidth(-FLT_MIN);
-            ImGui::InputText("##wcOutputMain", outputPathBuf, sizeof(outputPathBuf), ImGuiInputTextFlags_ReadOnly);
+            ImGui::InputText("##wcShopGer", shopGerPath, sizeof(shopGerPath));
+            if(ImGui::IsItemHovered() && !shopGerPath[0])
+                ImGui::SetTooltip("Auto-detected on load. Controls category sort order (F= values).");
             NextSectionAction();
-            if(outputPath.empty()) ImGui::BeginDisabled();
-            if(ImGui::Button("Open##wcOutputMain"))
-                OpenInExplorer(outputPath);
-            if(outputPath.empty()) ImGui::EndDisabled();
+            if(ImGui::Button("Browse##wcShopGer")){
+                std::string s;
+                if(BrowseFile(s, "All Files\0*.*\0\0")){
+                    std::snprintf(shopGerPath, sizeof(shopGerPath), "%s", s.c_str());
+                    categoryOrderPending = true;
+                }
+            }
+
+            BeginSectionRow("Output Folder");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputText("##wcOutputMain", customOutputPath, sizeof(customOutputPath));
+            if(ImGui::IsItemHovered() && !customOutputPath[0])
+                ImGui::SetTooltip("Blank = saves to Downloads");
+            NextSectionAction();
+            if(ImGui::Button("Browse##wcOutputMain")){
+                std::string s;
+                if(BrowseFolder(s))
+                    std::snprintf(customOutputPath, sizeof(customOutputPath), "%s", s.c_str());
+            }
             EndSectionTable();
         }
         ImGui::EndChild();
@@ -568,9 +713,10 @@ struct PageWeaponColour {
     void drawRunAndLogSections(bool includeLog = true){
         SectionLabel("Run");
         bool busy = running.load();
-        if(busy) ImGui::BeginDisabled();
+        bool canRun = canStartAction();
+        if(!canRun) ImGui::BeginDisabled();
         if(RunButton("Run##wc")) startAction();
-        if(busy) ImGui::EndDisabled();
+        if(!canRun) ImGui::EndDisabled();
         ImGui::SameLine();
         if(!lastOut.empty() && ImGui::Button("Open Output", {110,32})) OpenInExplorer(lastOut);
         if(busy){ ImGui::SameLine(); ImGui::TextColored(Col::YELLOW, "Running..."); }
@@ -634,7 +780,7 @@ struct PageWeaponColour {
     }
 
     bool isActionRunning() const { return running.load(); }
-    bool canStartAction() const { return !running.load() && filePath[0]; }
+    bool canStartAction() const { return !running.load() && inventoryIntPath[0]; }
 
     void startAction(){
         if(canStartAction()) runProcess();
@@ -650,9 +796,6 @@ struct PageWeaponColour {
         SectionLabel("Specific Weapon Overrides");
         SectionNote("Use this only when one weapon needs to break away from its category rule.");
 
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::ITEM_BG);
-        ImGui::BeginChild("##wcSpecificConfig", {0.f, 128.f}, true);
-
         ImGui::Text("InventoryItemTypes:"); ImGui::SameLine();
         ImGui::SetNextItemWidth(-156.f);
         ImGui::InputText("##wcInventoryInt", inventoryIntPath, sizeof(inventoryIntPath));
@@ -665,9 +808,6 @@ struct PageWeaponColour {
         ImGui::SameLine();
         if(ImGui::Button("Scan##wcInventoryInt"))
             scanSpecificWeapons();
-
-        ImGui::TextColored(Col::SUBTEXT, "%s", inventoryScanStatus.c_str());
-        ImGui::TextColored(Col::SUBTEXT, "Specific weapon rules override category rules when both match.");
 
         ImGui::Text("Search:"); ImGui::SameLine();
         ImGui::SetNextItemWidth(200.f);
@@ -714,18 +854,10 @@ struct PageWeaponColour {
         if(ImGui::SmallButton("Clear Search##wcSpecific"))
             weaponSearch[0] = '\0';
 
-        ImGui::EndChild();
-        ImGui::PopStyleColor();
-
         if(specificWeapons.empty()){
             ImGui::TextColored(Col::SUBTEXT, "No specific weapon list loaded.");
             return;
         }
-
-        int visibleCount = 0;
-        for(const auto& st : specificWeapons)
-            if(isSpecificVisible(st)) ++visibleCount;
-        ImGui::TextColored(Col::SUBTEXT, "%d weapons loaded, %d visible.", (int)specificWeapons.size(), visibleCount);
 
         const float listHeight = filePath[0] ? 520.f : 560.f;
         if(ImGui::BeginTable("##wcSpecificWeapons", 5,
@@ -776,9 +908,6 @@ struct PageWeaponColour {
         SectionLabel("Specific Weapon Overrides");
         SectionNote("Use this only when one weapon needs to break away from its category rule.");
 
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::ITEM_BG);
-        ImGui::BeginChild("##wcSpecificMergedConfig", {0.f, 118.f}, true);
-
         ImGui::Text("InventoryItemTypes:"); ImGui::SameLine();
         ImGui::SetNextItemWidth(-156.f);
         ImGui::InputText("##wcInventoryIntMerged", inventoryIntPath, sizeof(inventoryIntPath));
@@ -793,9 +922,6 @@ struct PageWeaponColour {
             scanSpecificWeapons();
 
         drawInlineOutputRow("##wcSpecificOutputGrid", "##wcSpecificOutputPath", "Open##wcSpecificOutput");
-
-        ImGui::TextColored(Col::SUBTEXT, "%s", inventoryScanStatus.c_str());
-        ImGui::TextColored(Col::SUBTEXT, "Specific weapon rules override category rules when both match.");
 
         ImGui::Text("Search:"); ImGui::SameLine();
         ImGui::SetNextItemWidth(200.f);
@@ -829,18 +955,10 @@ struct PageWeaponColour {
             ImGui::EndCombo();
         }
 
-        ImGui::EndChild();
-        ImGui::PopStyleColor();
-
         if(specificWeapons.empty()){
             ImGui::TextColored(Col::SUBTEXT, "No specific weapon list loaded.");
             return;
         }
-
-        int visibleCount = 0;
-        for(const auto& st : specificWeapons)
-            if(isSpecificVisible(st)) ++visibleCount;
-        ImGui::TextColored(Col::SUBTEXT, "%d weapons loaded, %d visible.", (int)specificWeapons.size(), visibleCount);
 
         const float listHeight = filePath[0] ? 520.f : 560.f;
         if(ImGui::BeginTable("##wcSpecificWeaponsMerged", 5,
@@ -893,6 +1011,11 @@ struct PageWeaponColour {
             autoDetectDefaultPaths();
         }
 
+        if(categoryOrderPending){
+            categoryOrderPending = false;
+            loadCategoryOrder();
+        }
+
         if(inventoryScanPending && inventoryIntPath[0]){
             inventoryScanPending = false;
             scanSpecificWeapons();
@@ -915,6 +1038,11 @@ struct PageWeaponColour {
         if(autoDetectPending){
             autoDetectPending = false;
             autoDetectDefaultPaths();
+        }
+
+        if(categoryOrderPending){
+            categoryOrderPending = false;
+            loadCategoryOrder();
         }
 
         if(inventoryScanPending && inventoryIntPath[0]){
@@ -954,14 +1082,15 @@ struct PageWeaponColour {
         running = true;
         lastOut.clear();
 
-        std::string path = filePath;
+        std::string path = inventoryIntPath;
+        std::string outPath = resolvedOutputPath();
         std::vector<std::string> ignored = ignoredKeys();
 
-        std::thread([this,path,settings,ignored](){
+        std::thread([this,path,outPath,settings,ignored](){
             try{
                 auto r = applyColourToGerFile(path, settings, ignored,
                     [this](const std::string& s){ log.append(s); },
-                    &cancelRequested);
+                    &cancelRequested, outPath);
                 if(r.cancelled || cancelRequested.load()){
                     log.append("Cancelled.");
                 } else {

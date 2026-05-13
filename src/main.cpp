@@ -25,6 +25,7 @@
 
 // Forward
 namespace apb::gui { void Render(); }
+namespace apb::gui { void Shutdown(); }
 namespace apb::gui { ImFont* ResolvePreviewFont(const char* apbFontTag, float* outPixelSize); }
 
 // ── D3D11 globals — exposed so ImageLoader can upload textures ────────────
@@ -295,6 +296,7 @@ int WINAPI WinMain(HINSTANCE hi,HINSTANCE,LPSTR,int){
         g_sc->Present(1,0);
     }
 
+    apb::gui::Shutdown();
     ImGui_ImplDX11_Shutdown();
     ImGui_ImplWin32_Shutdown();
     ImGui::DestroyContext();

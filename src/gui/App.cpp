@@ -296,7 +296,7 @@ static bool saveConfig(){
         out << "    \"gradient_start\": "; writeColor(out, s_wcolour.gradStart); out << ",\n";
         out << "    \"gradient_end\": "; writeColor(out, s_wcolour.gradEnd); out << ",\n";
         out << "    \"ignore_list\": \"" << jsonEscape(s_wcolour.ignoreList) << "\",\n";
-        out << "    \"preset_name\": \"" << jsonEscape(s_wcolour.presetName) << "\",\n";
+        out << "    \"preset_idx\": " << s_wcolour.quickPresetIdx << ",\n";
         out << "    \"preset_mode_idx\": " << s_wcolour.presetModeIdx << ",\n";
         out << "    \"preset_solid\": "; writeColor(out, s_wcolour.presetSolid); out << ",\n";
         out << "    \"preset_smooth_start\": "; writeColor(out, s_wcolour.presetSmoothStart); out << ",\n";
@@ -453,7 +453,7 @@ static void loadConfig(){
             jsonToColor(wc["gradient_start"], s_wcolour.gradStart);
             jsonToColor(wc["gradient_end"], s_wcolour.gradEnd);
             copyString(s_wcolour.ignoreList, sizeof(s_wcolour.ignoreList), jsonString(wc, "ignore_list"));
-            copyString(s_wcolour.presetName, sizeof(s_wcolour.presetName), jsonString(wc, "preset_name", "Custom"));
+            s_wcolour.quickPresetIdx = std::clamp(jsonInt(wc, "preset_idx", 0), 0, 2);
             s_wcolour.presetModeIdx = std::clamp(jsonInt(wc, "preset_mode_idx", s_wcolour.presetModeIdx), 0, 3);
             jsonToColor(wc["preset_solid"], s_wcolour.presetSolid);
             jsonToColor(wc["preset_smooth_start"], s_wcolour.presetSmoothStart);
@@ -853,6 +853,10 @@ void Render(){
     ImGui::End();
     ImGui::PopStyleVar(5);
     ImGui::PopStyleColor();
+}
+
+void Shutdown(){
+    saveConfig();
 }
 
 } // namespace apb::gui

@@ -49,6 +49,8 @@ struct WeaponInventoryEntry {
 };
 std::vector<GunTypeDefinition> weaponGunTypes();
 std::vector<WeaponInventoryEntry> scanInventoryWeapons(const std::string& inputPath);
+std::map<std::string,int> parseShopUIFilterOrder(const std::string& path);
+std::map<std::string,int> defaultShopUIFilterOrder();
 struct ColourResult {
     std::string text,inputPath,outputPath,encodingUsed;
     int weaponsTotal=0,alreadyColoured=0,newlyColoured=0,skippedRules=0;
@@ -59,5 +61,6 @@ ColourResult applyColourToGerFile(
     const std::vector<GunTypeColourSettings>& settings,
     const std::vector<std::string>& ignoredKeys={},
     std::function<void(const std::string&)> log=nullptr,
-    const std::atomic<bool>* cancelFlag=nullptr);
+    const std::atomic<bool>* cancelFlag=nullptr,
+    const std::string& outputPath={});
 } // namespace apb

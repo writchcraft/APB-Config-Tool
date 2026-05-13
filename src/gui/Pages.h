@@ -243,7 +243,7 @@ struct PreviewCard {
         }
         return srv != nullptr;
     }
-    void release(){ apb::ReleaseTexture(srv); }
+    void release(){ apb::ReleaseTexture(srv); srv = nullptr; }
 
     // Draw at pos, returns bottom y
     // keyStart→keyEnd are gradient endpoints for stat key text
@@ -565,7 +565,6 @@ struct PagePlayerRoles {
     bool autoDetectTried = false;
     std::vector<PreviewCard> previewCards;
     bool previewCardsInit = false;
-    bool previewCardsShortNames = false;
 
     void configurePreviewCard(PreviewCard& card, const std::string& imgPath, int resourceId){
         const bool imageChanged = card.imgPath != imgPath || card.resourceId != resourceId;
@@ -583,24 +582,20 @@ struct PagePlayerRoles {
         if(!previewCardsInit){
             previewCardsInit = true;
             previewCards.resize(4);
+            configurePreviewCard(previewCards[1], "Assets\\Images_PlayerRoles\\rifleman.png",
+                IDR_IMG_PLAYER_ROLE_RIFLEMAN);
+            configurePreviewCard(previewCards[2], "Assets\\Images_PlayerRoles\\gunslinger.png",
+                IDR_IMG_PLAYER_ROLE_GUNSLINGER);
+            configurePreviewCard(previewCards[3], "Assets\\Images_PlayerRoles\\epidemic_2024.png",
+                IDR_IMG_PLAYER_ROLE_EPIDEMIC2024);
         }
-        if(previewCardsShortNames == useShortEquipmentNames && previewCards[0].srv)
-            return;
-
-        previewCardsShortNames = useShortEquipmentNames;
-        configurePreviewCard(previewCards[0], "Assets\\Images_PlayerRoles\\gunslinger.png",
-            IDR_IMG_PLAYER_ROLE_GUNSLINGER);
-        configurePreviewCard(previewCards[1], "Assets\\Images_PlayerRoles\\rifleman.png",
-            IDR_IMG_PLAYER_ROLE_RIFLEMAN);
-        configurePreviewCard(previewCards[2],
+        configurePreviewCard(previewCards[0],
             useShortEquipmentNames
                 ? "Assets\\Images_PlayerRoles\\burglar_short.png"
                 : "Assets\\Images_PlayerRoles\\burglar.png",
             useShortEquipmentNames
                 ? IDR_IMG_PLAYER_ROLE_BURGLAR_SHORT
                 : IDR_IMG_PLAYER_ROLE_BURGLAR);
-        configurePreviewCard(previewCards[3], "Assets\\Images_PlayerRoles\\epidemic_2024.png",
-            IDR_IMG_PLAYER_ROLE_EPIDEMIC2024);
     }
 
     static std::string latestLogLine(const std::string& text){

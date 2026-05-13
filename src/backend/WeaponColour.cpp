@@ -34,7 +34,9 @@ std::vector<GunTypeDefinition> weaponGunTypes(){
         {"Explosive", "Explosive", "Explosive", "InventoryItemTypes_Weapon_Explosive_"},
         {"Less Than Lethal / LTL", "LTL", "LTL", "InventoryItemTypes_Weapon_LTL_"},
         {"Pistol", "Pistol", "Pistol", "InventoryItemTypes_Weapon_Pistol_"},
-        {"Grenade / Throwables", "Grenade", "Grenade", "InventoryItemTypes_Weapon_Grenade_"}
+        {"Grenade / Throwables", "Grenade", "Grenade", "InventoryItemTypes_Weapon_Grenade_"},
+        {"Christmas", "Xmas", "Christmas", "InventoryItemTypes_Weapon_Christmas_"},
+        {"Valentines", "Val", "Valentine", "InventoryItemTypes_Weapon_Valentine_"}
     };
 }
 
@@ -89,6 +91,63 @@ static std::string readAny(const std::string& path){
     if(raw.size()>=3&&(unsigned char)raw[0]==0xEF&&(unsigned char)raw[1]==0xBB&&(unsigned char)raw[2]==0xBF)
         return raw.substr(3);
     return raw;
+}
+
+// ShopUIFilters token (lowercase) -> categoryToken
+static const std::map<std::string,std::string> SHOP_TO_CAT = {
+    {"semiautorifle",   "Rifle"},
+    {"submachinegun",   "SMG"},
+    {"assaultrifle",    "AssaultRifle"},
+    {"sniperrifle",     "SniperRifle"},
+    {"shotgun",         "Shotgun"},
+    {"heavymachinegun", "LMG"},
+    {"explosives",      "Explosive"},
+    {"crowdcontrol",    "LTL"},
+    {"christmas",       "Christmas"},
+    {"valentineprimary","Valentine"},
+    {"pistol",          "Pistol"},
+    {"grenade",         "Grenade"}
+};
+
+std::map<std::string,int> defaultShopUIFilterOrder(){
+    return {
+        {"AssaultRifle", 0},
+        {"Explosive",    1},
+        {"SniperRifle",  2},
+        {"LTL",          3},
+        {"LMG",          4},
+        {"Rifle",        5},
+        {"Shotgun",      6},
+        {"SMG",          7},
+        {"Christmas",    8},
+        {"Valentine",    9},
+        {"Pistol",       10},
+        {"Grenade",      11}
+    };
+}
+
+std::map<std::string,int> parseShopUIFilterOrder(const std::string& path){
+    std::map<std::string,int> result;
+    try {
+        std::string text = readAny(path);
+        std::regex rx(
+            "^ShopUIFilters_DeployItemCat_Weapon_([^_]+)_Name=.*<Color:F=(\\d+)",
+            std::regex::icase);
+        std::istringstream ss(text);
+        std::string line;
+        while(std::getline(ss, line)){
+            if(!line.empty() && line.back()=='\r') line.pop_back();
+            std::smatch m;
+            if(std::regex_search(line, m, rx)){
+                std::string token = toLower(m[1].str());
+                int order = std::stoi(m[2].str());
+                auto it = SHOP_TO_CAT.find(token);
+                if(it != SHOP_TO_CAT.end())
+                    result[it->second] = order;
+            }
+        }
+    } catch(...) {}
+    return result;
 }
 
 static void writeUtf16LE(const std::string& path,const std::string& utf8){
@@ -220,14 +279,20 @@ ColourResult applyColourToGerFile(
     const std::vector<GunTypeColourSettings>& settings,
     const std::vector<std::string>& ignoredKeys,
     std::function<void(const std::string&)> log,
-    const std::atomic<bool>* cancelFlag)
+    const std::atomic<bool>* cancelFlag,
+    const std::string& outputPath)
 {
     std::string text=readAny(inputPath);
 
-    // Output dir
-    std::string outDir=dirOf(inputPath)+"\\Output";
-    CreateDirectoryA(outDir.c_str(),nullptr);
-    std::string outPath=outDir+"\\"+baseOf(inputPath);
+    std::string outPath;
+    if(!outputPath.empty()){
+        outPath = outputPath;
+        CreateDirectoryA(dirOf(outPath).c_str(), nullptr);
+    } else {
+        std::string outDir=dirOf(inputPath)+"\\Output";
+        CreateDirectoryA(outDir.c_str(),nullptr);
+        outPath=outDir+"\\"+baseOf(inputPath);
+    }
 
     ColourResult res;
     res.inputPath=inputPath; res.outputPath=outPath;
