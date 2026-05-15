@@ -10,8 +10,15 @@
 #include <optional>
 #include <cctype>
 #include <regex>
+#include <fstream>
+#include <sstream>
+#include <mutex>
+#include <filesystem>
 
 namespace apb {
+namespace fs = std::filesystem;
+
+static const std::string kWeaponSep = "\xe2\x86\xb5";
 
 int calculateStk(double dmg, double pool) {
     if(dmg<=0) return INT_MAX;
@@ -323,17 +330,334 @@ static double projSpeedCmps(const json& proj){
     return 0.0;
 }
 
+static std::string trimCopy(const std::string& s){
+    size_t a = 0, b = s.size();
+    while(a < b && std::isspace((unsigned char)s[a])) ++a;
+    while(b > a && std::isspace((unsigned char)s[b-1])) --b;
+    return s.substr(a, b-a);
+}
+static std::string lowerCopy(std::string s){
+    for(char& c : s) c = char(std::tolower((unsigned char)c));
+    return s;
+}
+static std::string readTextAnyLocal(const std::string& path){
+    std::ifstream f(path, std::ios::binary);
+    if(!f) return {};
+    std::string raw((std::istreambuf_iterator<char>(f)), {});
+    if(raw.size() >= 2){
+        auto b0 = uint8_t(raw[0]), b1 = uint8_t(raw[1]);
+        if(b0 == 0xFF && b1 == 0xFE){
+            std::string out;
+            for(size_t i = 2; i + 1 < raw.size(); i += 2){
+                uint16_t cp = uint8_t(raw[i]) | (uint16_t(uint8_t(raw[i+1])) << 8);
+                if(cp < 0x80) out += char(cp);
+                else if(cp < 0x800){
+                    out += char(0xC0 | (cp >> 6));
+                    out += char(0x80 | (cp & 0x3F));
+                }else{
+                    out += char(0xE0 | (cp >> 12));
+                    out += char(0x80 | ((cp >> 6) & 0x3F));
+                    out += char(0x80 | (cp & 0x3F));
+                }
+            }
+            return out;
+        }
+        if(b0 == 0xEF && b1 == 0xBB && raw.size() >= 3 && uint8_t(raw[2]) == 0xBF)
+            return raw.substr(3);
+    }
+    return raw;
+}
+static std::optional<double> firstNumber(const std::string& s){
+    static const std::regex numRe(R"(([-+]?\d+(?:\.\d+)?))");
+    std::smatch m;
+    if(std::regex_search(s, m, numRe)){
+        try { return std::stod(m[1].str()); } catch(...) {}
+    }
+    return {};
+}
+static bool parseNumberTimes(const std::string& s, double& value, int& times){
+    static const std::regex timesRe(R"(^\s*([-+]?\d+(?:\.\d+)?)\s*x\s*(\d+)\s*$)", std::regex::icase);
+    std::smatch m;
+    if(std::regex_match(s, m, timesRe)){
+        try{
+            value = std::stod(m[1].str());
+            times = std::max(1, std::stoi(m[2].str()));
+            return true;
+        } catch(...) {}
+    }
+    auto n = firstNumber(s);
+    if(!n) return false;
+    value = *n;
+    times = 1;
+    return true;
+}
+static std::vector<std::string> splitBySep(const std::string& s, const std::string& sep){
+    std::vector<std::string> out;
+    size_t pos = 0;
+    while(true){
+        size_t next = s.find(sep, pos);
+        if(next == std::string::npos){
+            out.push_back(s.substr(pos));
+            break;
+        }
+        out.push_back(s.substr(pos, next - pos));
+        pos = next + sep.size();
+    }
+    return out;
+}
+static std::string stripColorTags(const std::string& s){
+    static const std::regex colorTagRe(R"(<\s*Color\s*:[^>]*>)", std::regex::icase);
+    return std::regex_replace(s, colorTagRe, "");
+}
+static bool parseStatsCacheLine(const std::string& body, Stats& s){
+    const std::string plain = stripColorTags(body);
+    std::map<std::string,std::string> fields;
+    for(const std::string& partRaw : splitBySep(plain, kWeaponSep)){
+        const std::string part = trimCopy(partRaw);
+        const size_t colon = part.find(':');
+        if(colon == std::string::npos) continue;
+        fields[lowerCopy(trimCopy(part.substr(0, colon)))] = trimCopy(part.substr(colon + 1));
+    }
+    if(fields.empty()) return false;
+
+    auto has = [&](const char* key){ return fields.find(key) != fields.end(); };
+    auto value = [&](const char* key)->std::string{
+        auto it = fields.find(key);
+        return it == fields.end() ? std::string{} : it->second;
+    };
+    auto assign = [&](double& dst, const char* key)->bool{
+        auto n = firstNumber(value(key));
+        if(!n) return false;
+        dst = *n;
+        return true;
+    };
+    auto assignInt = [&](int& dst, const char* key)->bool{
+        auto n = firstNumber(value(key));
+        if(!n) return false;
+        dst = int(std::round(*n));
+        return true;
+    };
+    auto assignDamage = [&](double& dst, int& times, const char* key)->bool{
+        return parseNumberTimes(value(key), dst, times);
+    };
+
+    Stats parsed;
+    if(has("explosion radius")){
+        parsed.isThrownGrenade = true;
+        assign(parsed.explosiveMaxHealthDamage, "max health damage");
+        assign(parsed.explosiveStaminaDamage, "max stamina damage");
+        assign(parsed.explosiveHardDamage, "max hard damage");
+        assign(parsed.explosiveFRadius, "explosion radius");
+        assign(parsed.explosiveFGroundZeroRadius, "max damage radius");
+        assign(parsed.fuseDelay, "fuse delay");
+        if(assign(parsed.firingSpeed, "speed")) parsed.firingSpeed *= 100.0;
+    }else if(has("air burst distance")){
+        parsed.isRl = true;
+        assign(parsed.explosiveTtk, "time to kill");
+        assignInt(parsed.explosiveStk, "shots to kill");
+        assign(parsed.explosiveMaxHealthDamage, "max health damage");
+        assign(parsed.explosiveStaminaDamage, "max stamina damage");
+        assign(parsed.explosiveHardDamage, "max hard damage");
+        assign(parsed.windUpTime, "wind up time");
+        assign(parsed.reloadTime, "reload time");
+        assign(parsed.equipTime, "equip time");
+        assign(parsed.explosiveAirBurst, "air burst distance");
+    }else if(has("max health damage") && has("time to stun")){
+        parsed.isGlLtl = true;
+        assign(parsed.explosiveTts, "time to stun");
+        assignInt(parsed.explosiveSts, "shots to stun");
+        assign(parsed.explosiveMaxHealthDamage, "max health damage");
+        assign(parsed.explosiveStaminaDamage, "max stamina damage");
+        assign(parsed.explosiveHardDamage, "max hard damage");
+        assign(parsed.windUpTime, "wind up time");
+        assign(parsed.fireInterval, "fire interval");
+        assign(parsed.reloadTime, "reload time");
+        assign(parsed.equipTime, "equip time");
+    }else if(has("max health damage") && has("time to kill")){
+        parsed.isGl = true;
+        assign(parsed.explosiveTtk, "time to kill");
+        assignInt(parsed.explosiveStk, "shots to kill");
+        assign(parsed.explosiveMaxHealthDamage, "max health damage");
+        assign(parsed.explosiveStaminaDamage, "max stamina damage");
+        assign(parsed.explosiveHardDamage, "max hard damage");
+        assign(parsed.windUpTime, "wind up time");
+        assign(parsed.fireInterval, "fire interval");
+        assign(parsed.reloadTime, "reload time");
+        assign(parsed.equipTime, "equip time");
+    }else if(has("time to stun")){
+        parsed.isLtlAmmoWeapon = true;
+        assign(parsed.tts, "time to stun");
+        assignInt(parsed.sts, "shots to stun");
+        assign(parsed.healthDamage, "health damage");
+        assign(parsed.staminaDamage, "stamina damage");
+        assign(parsed.hardDamage, "hard damage");
+        assign(parsed.ltlRange, "effective range");
+        assign(parsed.fireInterval, "fire interval");
+        assign(parsed.reloadTime, "reload time");
+        assign(parsed.equipTime, "equip time");
+    }else if(has("burst interval")){
+        int burstShots = 1;
+        assign(parsed.burstTtk, "time to kill");
+        assignInt(parsed.stk, "shots to kill");
+        assignDamage(parsed.healthDamage, burstShots, "health damage");
+        int burstShots2 = burstShots;
+        assignDamage(parsed.staminaDamage, burstShots2, "stamina damage");
+        assignDamage(parsed.hardDamage, burstShots2, "hard damage");
+        parsed.burstShots = std::max(2, burstShots);
+        assign(parsed.rampDistanceInM, "effective range");
+        assign(parsed.burstInterval, "burst interval");
+        assign(parsed.reloadTime, "reload time");
+        assign(parsed.equipTime, "equip time");
+    }else{
+        int count = 1;
+        assign(parsed.ttk, "time to kill");
+        assignInt(parsed.stk, "shots to kill");
+        assignDamage(parsed.healthDamage, count, "health damage");
+        int count2 = count;
+        assignDamage(parsed.staminaDamage, count2, "stamina damage");
+        assignDamage(parsed.hardDamage, count2, "hard damage");
+        parsed.nPellets = std::max(1, count);
+        assign(parsed.rampDistanceInM, "effective range");
+        assign(parsed.fireInterval, "fire interval");
+        assign(parsed.reloadTime, "reload time");
+        assign(parsed.equipTime, "equip time");
+    }
+
+    s = parsed;
+    return true;
+}
+static std::optional<fs::path> findWeaponStatsCachePath(){
+    std::error_code ec;
+    fs::path cur = fs::current_path(ec);
+    if(ec) return {};
+    for(int i = 0; i < 8; ++i){
+        fs::path cand = cur / "PremadeConfigsEXAMPLES" / "writch" / "WeaponItemTypes.GER";
+        if(fs::exists(cand, ec) && !ec) return cand;
+        if(!cur.has_parent_path()) break;
+        cur = cur.parent_path();
+    }
+    return {};
+}
+static std::map<std::string, Stats> buildWeaponStatsCache(){
+    std::map<std::string, Stats> cache;
+    auto path = findWeaponStatsCachePath();
+    if(!path) return cache;
+    const std::string text = readTextAnyLocal(path->string());
+    if(text.empty()) return cache;
+
+    std::istringstream ss(text);
+    std::string line;
+    while(std::getline(ss, line)){
+        const std::string prefix = "WeaponItemTypes_";
+        const std::string suffix = "_Description=";
+        if(line.rfind(prefix, 0) != 0) continue;
+        const size_t pos = line.find(suffix, prefix.size());
+        if(pos == std::string::npos) continue;
+        const std::string key = line.substr(prefix.size(), pos - prefix.size());
+        Stats parsed;
+        if(parseStatsCacheLine(line.substr(pos + suffix.size()), parsed))
+            cache.emplace(key, parsed);
+    }
+    return cache;
+}
+static const std::map<std::string, Stats>& weaponStatsCache(){
+    static std::once_flag once;
+    static std::map<std::string, Stats> cache;
+    std::call_once(once, [](){ cache = buildWeaponStatsCache(); });
+    return cache;
+}
+static std::string stripRegex(const std::string& value, const std::regex& re){
+    return std::regex_replace(value, re, "");
+}
+static std::vector<std::string> weaponKeyCandidates(const std::string& key){
+    std::vector<std::string> out;
+    std::set<std::string> seen;
+    auto add = [&](const std::string& cand){
+        if(cand.empty()) return;
+        if(seen.insert(cand).second) out.push_back(cand);
+    };
+
+    static const std::regex slotTailRe(R"((_Slot\d+)_([A-Za-z0-9]+)$)", std::regex::icase);
+    static const std::regex slotRe(R"(_Slot\d+$)", std::regex::icase);
+    static const std::regex armasPresetRe(R"(_Armas_Preset_FN\d+[A-Za-z0-9_]*$)", std::regex::icase);
+    static const std::regex promoRe(R"((?:_[Pp][Rr]\d+[A-Za-z]?)(?:_Armas(?:_RUS)?)?$)");
+    static const std::regex suffixRe(R"(_(?:Armas|Joker|NoTrade|Perm|Lease|Leased|5Day|7Day|30Day|GunGame|FC|JB|RUS|Common)$)", std::regex::icase);
+    static const std::regex dashPromoRe(R"(-[A-Za-z0-9]+_[Pp][Rr]\d+[A-Za-z]?(?:_Armas(?:_RUS)?)?$)");
+
+    add(key);
+    std::string cur = key;
+    add(stripRegex(cur, armasPresetRe));
+    add(stripRegex(cur, dashPromoRe));
+    add(stripRegex(cur, promoRe));
+    add(stripRegex(cur, suffixRe));
+
+    std::string slotBase = std::regex_replace(cur, slotTailRe, "$1");
+    add(slotBase);
+    add(stripRegex(slotBase, suffixRe));
+    add(stripRegex(slotBase, slotRe));
+
+    std::string noPromo = stripRegex(cur, promoRe);
+    add(noPromo);
+    add(std::regex_replace(noPromo, slotTailRe, "$1"));
+    add(stripRegex(std::regex_replace(noPromo, slotTailRe, "$1"), slotRe));
+
+    return out;
+}
+static StatsResult statsFromCache(const std::string& extracted){
+    const auto& cache = weaponStatsCache();
+    if(cache.empty()) return {};
+
+    auto tryExactOrPrefix = [&](const std::string& cand)->std::optional<Stats>{
+        auto it = cache.find(cand);
+        if(it != cache.end()) return it->second;
+
+        const Stats* best = nullptr;
+        size_t bestLen = SIZE_MAX;
+        const std::string prefix = cand + "_";
+        for(const auto& [key, stats] : cache){
+            if(key.rfind(prefix, 0) == 0 && key.size() < bestLen){
+                best = &stats;
+                bestLen = key.size();
+            }
+        }
+        if(best) return *best;
+        return {};
+    };
+
+    for(const std::string& cand : weaponKeyCandidates(extracted)){
+        if(auto stats = tryExactOrPrefix(cand))
+            return {"", *stats, true};
+    }
+    return {};
+}
+static std::string urlEncodePathSegment(const std::string& s){
+    static const char* hex = "0123456789ABCDEF";
+    std::string out;
+    out.reserve(s.size() * 3);
+    for(unsigned char c : s){
+        if((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+           (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~'){
+            out += char(c);
+        }else{
+            out += '%';
+            out += hex[c >> 4];
+            out += hex[c & 0x0F];
+        }
+    }
+    return out;
+}
+
 StatsResult statsFromApbdb(const std::string& extracted, int timeoutSec){
-    std::string url="https://api.apbdb.com/beacon/items/"+extracted;
+    std::string url="https://api.apbdb.com/beacon/items/"+urlEncodePathSegment(extracted);
     auto resp=httpGet(url, timeoutSec*1000);
-    if(!resp.ok()) return {};
+    if(!resp.ok()) return statsFromCache(extracted);
     bool ok=false;
     json root=json::parse(resp.body,ok);
-    if(!ok||!root.is_object()) return {};
+    if(!ok||!root.is_object()) return statsFromCache(extracted);
 
     std::string infra = root.value("infracategory","");
     auto& detV = root["detail"];
-    if(!detV.is_object()) return {};
+    if(!detV.is_object()) return statsFromCache(extracted);
     const json& d = detV;
 
     auto gd=[&](std::vector<std::string> p){ return deepGet(d,p); };
