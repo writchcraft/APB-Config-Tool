@@ -8,6 +8,7 @@ namespace apb {
 struct VStats {
     double maxHealth=0,maxSpeedMps=0,maxReverseSpeedMps=0;
     double cargoCapacity=0,vehicleWeight=0,explosionMaxDamage=0,explosionRadiusCm=0;
+    double empVulnerability=0;
 };
 struct VStatsResult { VStats stats; bool ok=false; };
 VStatsResult vehicleStatsFromApbdb(const std::string& key,int timeoutSec=15);

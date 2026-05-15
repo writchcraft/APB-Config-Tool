@@ -149,6 +149,17 @@ VStatsResult vehicleStatsFromApbdb(const std::string& key, int timeoutSec){
     double expRadius = gfuzzy(destruct,{"fExplosionRadius","fExplosionRadiusCM","explosionRadius","radius"});
     if(expRadius<=0) expRadius=deepFuzzy(d,{"fExplosionRadius","explosionRadius","radius"});
 
+    double empVulnerability = gfuzzy(src,{
+        "fEMPSusceptability","fEMPSusceptibility","empVulnerability",
+        "empSusceptability","empSusceptibility"
+    });
+    if(empVulnerability<=0){
+        empVulnerability = deepFuzzy(d,{
+            "fEMPSusceptability","fEMPSusceptibility","empVulnerability",
+            "empSusceptability","empSusceptibility"
+        });
+    }
+
     auto normSpeed=[](double v)->double{
         if(v<=0) return 0;
         if(v>1000) return v/100.0;
@@ -162,6 +173,7 @@ VStatsResult vehicleStatsFromApbdb(const std::string& key, int timeoutSec){
     vs.maxHealth=maxHealth; vs.maxSpeedMps=maxSpeed; vs.maxReverseSpeedMps=revSpeed;
     vs.cargoCapacity=cargo; vs.vehicleWeight=lookupWeight(key);
     vs.explosionMaxDamage=expDmg; vs.explosionRadiusCm=expRadius;
+    vs.empVulnerability=empVulnerability;
     return {vs,true};
 }
 
@@ -285,6 +297,7 @@ static std::string buildVehicleLine(const std::string& key, const VStats& v,
         parts.push_back("Vehicle Weight: "+fmtNum(v.vehicleWeight));
         parts.push_back("Explosion Max Damage: "+std::to_string(int(std::round(v.explosionMaxDamage))));
         parts.push_back("Explosion Radius: "+fmtCm(v.explosionRadiusCm));
+        parts.push_back("EMP Vulnerability: "+fmtNum(v.empVulnerability));
     } else {
         parts.push_back(label("Max Health:")+" "+std::to_string(int(std::round(v.maxHealth))));
         parts.push_back(label("Max Speed:")+" "+fmtMps(v.maxSpeedMps));
@@ -293,6 +306,7 @@ static std::string buildVehicleLine(const std::string& key, const VStats& v,
         parts.push_back(label("Vehicle Weight:")+" "+fmtNum(v.vehicleWeight));
         parts.push_back(label("Explosion Max Damage:")+" "+std::to_string(int(std::round(v.explosionMaxDamage))));
         parts.push_back(label("Explosion Radius:")+" "+fmtCm(v.explosionRadiusCm));
+        parts.push_back(label("EMP Vulnerability:")+" "+fmtNum(v.empVulnerability));
     }
     std::string joined;
     for(size_t i=0;i<parts.size();++i){ if(i) joined+=SEP; joined+=parts[i]; }

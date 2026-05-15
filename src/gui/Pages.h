@@ -2022,10 +2022,10 @@ struct PageVehicleItemTypes {
         if(cardsInit) return; cardsInit=true;
         std::string dir = VehicleImgDir();
         cards = {
-            {"Han Coywolf CR4",        {}, {{"Max Health","990"},{"Max Speed","20.1 m/s"},{"Max Reverse Speed","12 m/s"},{"Cargo Capacity","5"},{"Vehicle Weight","2.4"},{"Explosion Max Damage","1400"},{"Explosion Radius","750 cm"}}},
-            {"Joker Vegas G24 4x4",    {}, {{"Max Health","1150"},{"Max Speed","22 m/s"},{"Max Reverse Speed","12 m/s"},{"Cargo Capacity","5"},{"Vehicle Weight","4.0"},{"Explosion Max Damage","1400"},{"Explosion Radius","750 cm"}}},
-            {"Nulander Nomad Q134",    {}, {{"Max Health","1500"},{"Max Speed","20.9 m/s"},{"Max Reverse Speed","12 m/s"},{"Cargo Capacity","15"},{"Vehicle Weight","5.5"},{"Explosion Max Damage","2000"},{"Explosion Radius","850 cm"}}},
-            {"Sungnyemun Mirage S-24", {}, {{"Max Health","1050"},{"Max Speed","22.5 m/s"},{"Max Reverse Speed","12 m/s"},{"Cargo Capacity","5"},{"Vehicle Weight","2.4"},{"Explosion Max Damage","1400"},{"Explosion Radius","750 cm"}}},
+            {"Han Coywolf CR4",        {}, {{"Max Health","990"},{"Max Speed","20.1 m/s"},{"Max Reverse Speed","12 m/s"},{"Cargo Capacity","5"},{"Vehicle Weight","2.4"},{"Explosion Max Damage","1400"},{"Explosion Radius","750 cm"},{"EMP Vulnerability",""}}},
+            {"Joker Vegas G24 4x4",    {}, {{"Max Health","1150"},{"Max Speed","22 m/s"},{"Max Reverse Speed","12 m/s"},{"Cargo Capacity","5"},{"Vehicle Weight","4.0"},{"Explosion Max Damage","1400"},{"Explosion Radius","750 cm"},{"EMP Vulnerability",""}}},
+            {"Nulander Nomad Q134",    {}, {{"Max Health","1500"},{"Max Speed","20.9 m/s"},{"Max Reverse Speed","12 m/s"},{"Cargo Capacity","15"},{"Vehicle Weight","5.5"},{"Explosion Max Damage","2000"},{"Explosion Radius","850 cm"},{"EMP Vulnerability",""}}},
+            {"Sungnyemun Mirage S-24", {}, {{"Max Health","1050"},{"Max Speed","22.5 m/s"},{"Max Reverse Speed","12 m/s"},{"Cargo Capacity","5"},{"Vehicle Weight","2.4"},{"Explosion Max Damage","1400"},{"Explosion Radius","750 cm"},{"EMP Vulnerability",""}}},
         };
         cards[0].card.imgPath = dir+"\\coywolf.png";
         cards[1].card.imgPath = dir+"\\vegas.png";
