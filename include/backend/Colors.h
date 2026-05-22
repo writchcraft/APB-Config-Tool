@@ -40,23 +40,41 @@ inline std::string gradientText(const std::string& label,const RGB& c1,const RGB
     if(label.empty()) return {};
     int n=std::max(1,(int)label.size()-1);
     std::string out;
+    bool open=false;
     for(int i=0;i<(int)label.size();++i){
+        if(label[i]==' '){
+            if(open){out+="<Color:/>";open=false;}
+            out+=label[i];
+            continue;
+        }
         double t=n==0?0.0:double(i)/n;
-        out+=colorTag(lerpRGB(c1,c2,t),std::string(1,label[i]));
+        out+=openColorTag(lerpRGB(c1,c2,t));
+        out+=label[i];
+        open=true;
     }
+    if(open) out+="<Color:/>";
     return out;
 }
 inline std::string tripleGradientText(const std::string& label,const RGB& c1,const RGB& c2,const RGB& c3){
     if(label.empty()) return {};
     int n=std::max(1,(int)label.size()-1);
     std::string out;
+    bool open=false;
     for(int i=0;i<(int)label.size();++i){
+        if(label[i]==' '){
+            if(open){out+="<Color:/>";open=false;}
+            out+=label[i];
+            continue;
+        }
         double t=n==0?0.0:double(i)/n;
         RGB c = (t <= 0.5)
             ? lerpRGB(c1,c2,t*2.0)
             : lerpRGB(c2,c3,(t-0.5)*2.0);
-        out+=colorTag(c,std::string(1,label[i]));
+        out+=openColorTag(c);
+        out+=label[i];
+        open=true;
     }
+    if(open) out+="<Color:/>";
     return out;
 }
 inline std::string solidText(const std::string& lbl,const RGB& c){ return colorTag(c,lbl); }

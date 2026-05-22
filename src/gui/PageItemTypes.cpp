@@ -55,7 +55,13 @@ static std::string gradientLineText(const char* key, const char* val,
     std::string out;
     std::string ks(key); ks += ":";
     int n = std::max(1,(int)ks.size()-1);
+    bool open = false;
     for (int i=0;i<(int)ks.size();++i) {
+        if (ks[i] == ' ') {
+            if (open) { out += "<Color:/>"; open = false; }
+            out += ks[i];
+            continue;
+        }
         float t = (float)i/n;
         // just produce coloured text tag for preview – ImGui doesn't support inline colours,
         // so we use the APB tag format as a plain text preview
@@ -64,8 +70,9 @@ static std::string gradientLineText(const char* key, const char* val,
         float b = c1[2]+(c2[2]-c1[2])*t;
         out += fmtColourTag(r, g, b);
         out += ks[i];
-        out += "<Color:/>";
+        open = true;
     }
+    if (open) out += "<Color:/>";
     out += " "; out += val;
     return out;
 }

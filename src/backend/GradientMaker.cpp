@@ -44,12 +44,17 @@ std::string hardGradientString(const std::string& text,const std::vector<RGB>& p
     auto pat=bounce((int)pal.size());
     int period=(int)pat.size(),step=0;
     std::string out;
+    bool open=false;
     for(char ch:text){
-        if(skip&&ch==' '){out+=ch;continue;}
+        if(skip&&ch==' '){
+            if(open){out+="<Color:/>";open=false;}
+            out+=ch;
+            continue;
+        }
         const RGB& c=pal[pat[step%period]];
-        out+=openColorTag(c); out+=ch; ++step;
+        out+=openColorTag(c); out+=ch; open=true; ++step;
     }
-    out+="<Color:/>";
+    if(open) out+="<Color:/>";
     return out;
 }
 
@@ -57,13 +62,18 @@ std::string smoothGradientString(const std::string& text,const RGB& s,const RGB&
     std::vector<int> idx;
     for(int i=0;i<(int)text.size();++i) if(!(skip&&text[i]==' ')) idx.push_back(i);
     int N=(int)idx.size(); if(!N) return text;
-    std::string out; int k=0;
+    std::string out; int k=0; bool open=false;
     for(char ch:text){
-        if(skip&&ch==' '){out+=ch;continue;}
+        if(skip&&ch==' '){
+            if(open){out+="<Color:/>";open=false;}
+            out+=ch;
+            continue;
+        }
         double t=(N==1)?0.0:double(k)/(N-1);
         RGB c=lerpRGB(s,e,t);
-        out+=colorTag(c,std::string(1,ch)); ++k;
+        out+=openColorTag(c); out+=ch; open=true; ++k;
     }
+    if(open) out+="<Color:/>";
     return out;
 }
 
@@ -71,15 +81,20 @@ std::string tripleGradientString(const std::string& text,const RGB& a,const RGB&
     std::vector<int> idx;
     for(int i=0;i<(int)text.size();++i) if(!(skip&&text[i]==' ')) idx.push_back(i);
     int N=(int)idx.size(); if(!N) return text;
-    std::string out; int k=0;
+    std::string out; int k=0; bool open=false;
     for(char ch:text){
-        if(skip&&ch==' '){out+=ch;continue;}
+        if(skip&&ch==' '){
+            if(open){out+="<Color:/>";open=false;}
+            out+=ch;
+            continue;
+        }
         double t=(N==1)?0.0:double(k)/(N-1);
         RGB col = (t <= 0.5)
             ? lerpRGB(a,b,t*2.0)
             : lerpRGB(b,c,(t-0.5)*2.0);
-        out+=colorTag(col,std::string(1,ch)); ++k;
+        out+=openColorTag(col); out+=ch; open=true; ++k;
     }
+    if(open) out+="<Color:/>";
     return out;
 }
 } // namespace apb

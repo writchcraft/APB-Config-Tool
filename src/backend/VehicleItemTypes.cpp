@@ -257,23 +257,41 @@ static std::string buildVehicleLine(const std::string& key, const VStats& v,
         if(lbl.empty()) return {};
         int n=std::max(1,(int)lbl.size()-1);
         std::string out;
+        bool open=false;
         for(int i=0;i<(int)lbl.size();++i){
+            if(lbl[i]==' '){
+                if(open){out+="<Color:/>";open=false;}
+                out+=lbl[i];
+                continue;
+            }
             double t=n==0?0.0:double(i)/n;
-            out+=ctag(lerp(c1.r,c2.r,t),lerp(c1.g,c2.g,t),lerp(c1.b,c2.b,t),std::string(1,lbl[i]));
+            out+=openColorTag({lerp(c1.r,c2.r,t),lerp(c1.g,c2.g,t),lerp(c1.b,c2.b,t)});
+            out+=lbl[i];
+            open=true;
         }
+        if(open) out+="<Color:/>";
         return out;
     };
     auto triple=[&](const std::string& lbl, RGB c1, RGB c2, RGB c3)->std::string{
         if(lbl.empty()) return {};
         int n=std::max(1,(int)lbl.size()-1);
         std::string out;
+        bool open=false;
         for(int i=0;i<(int)lbl.size();++i){
+            if(lbl[i]==' '){
+                if(open){out+="<Color:/>";open=false;}
+                out+=lbl[i];
+                continue;
+            }
             double t=n==0?0.0:double(i)/n;
             RGB c = (t <= 0.5)
                 ? RGB{lerp(c1.r,c2.r,t*2.0),lerp(c1.g,c2.g,t*2.0),lerp(c1.b,c2.b,t*2.0)}
                 : RGB{lerp(c2.r,c3.r,(t-0.5)*2.0),lerp(c2.g,c3.g,(t-0.5)*2.0),lerp(c2.b,c3.b,(t-0.5)*2.0)};
-            out+=ctag(c.r,c.g,c.b,std::string(1,lbl[i]));
+            out+=openColorTag(c);
+            out+=lbl[i];
+            open=true;
         }
+        if(open) out+="<Color:/>";
         return out;
     };
     auto solid=[&](const std::string& lbl, RGB c)->std::string{

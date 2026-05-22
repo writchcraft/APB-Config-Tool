@@ -2022,10 +2022,10 @@ struct PageVehicleItemTypes {
         if(cardsInit) return; cardsInit=true;
         std::string dir = VehicleImgDir();
         cards = {
-            {"Han Coywolf CR4",        {}, {{"Max Health","990"},{"Max Speed","20.1 m/s"},{"Max Reverse Speed","12 m/s"},{"Cargo Capacity","5"},{"Vehicle Weight","2.4"},{"Explosion Max Damage","1400"},{"Explosion Radius","750 cm"},{"EMP Vulnerability",""}}},
-            {"Joker Vegas G24 4x4",    {}, {{"Max Health","1150"},{"Max Speed","22 m/s"},{"Max Reverse Speed","12 m/s"},{"Cargo Capacity","5"},{"Vehicle Weight","4.0"},{"Explosion Max Damage","1400"},{"Explosion Radius","750 cm"},{"EMP Vulnerability",""}}},
-            {"Nulander Nomad Q134",    {}, {{"Max Health","1500"},{"Max Speed","20.9 m/s"},{"Max Reverse Speed","12 m/s"},{"Cargo Capacity","15"},{"Vehicle Weight","5.5"},{"Explosion Max Damage","2000"},{"Explosion Radius","850 cm"},{"EMP Vulnerability",""}}},
-            {"Sungnyemun Mirage S-24", {}, {{"Max Health","1050"},{"Max Speed","22.5 m/s"},{"Max Reverse Speed","12 m/s"},{"Cargo Capacity","5"},{"Vehicle Weight","2.4"},{"Explosion Max Damage","1400"},{"Explosion Radius","750 cm"},{"EMP Vulnerability",""}}},
+            {"Han Coywolf CR4",        {}, {{"Max Health","990"},{"Max Speed","20.1 m/s"},{"Max Reverse Speed","12 m/s"},{"Cargo Capacity","5"},{"Vehicle Weight","2.4"},{"Explosion Max Damage","1400"},{"Explosion Radius","750 cm"},{"EMP Vulnerability","1"}}},
+            {"Joker Vegas G24 4x4",    {}, {{"Max Health","1150"},{"Max Speed","22 m/s"},{"Max Reverse Speed","12 m/s"},{"Cargo Capacity","5"},{"Vehicle Weight","4.0"},{"Explosion Max Damage","1400"},{"Explosion Radius","750 cm"},{"EMP Vulnerability","0.4"}}},
+            {"Nulander Nomad Q134",    {}, {{"Max Health","1500"},{"Max Speed","20.9 m/s"},{"Max Reverse Speed","12 m/s"},{"Cargo Capacity","15"},{"Vehicle Weight","5.5"},{"Explosion Max Damage","2000"},{"Explosion Radius","850 cm"},{"EMP Vulnerability","1"}}},
+            {"Sungnyemun Mirage S-24", {}, {{"Max Health","1050"},{"Max Speed","22.5 m/s"},{"Max Reverse Speed","12 m/s"},{"Cargo Capacity","5"},{"Vehicle Weight","2.4"},{"Explosion Max Damage","1400"},{"Explosion Radius","750 cm"},{"EMP Vulnerability","0.8"}}},
         };
         cards[0].card.imgPath = dir+"\\coywolf.png";
         cards[1].card.imgPath = dir+"\\vegas.png";
@@ -2191,9 +2191,9 @@ struct PageVehicleItemTypes {
             "One of the toughest vehicles in San Paro. Features good grip, reasonable cargo space and excellent acceleration once it's on the move. Enforcer only.",
             "Combining quick acceleration with moderate handling, the Sungnyemun Mirage S-22 is designed and built to be a quick escape car."
         };
-        // Mirage title wraps to 2 lines in the source image, so description body starts lower.
+        // Mirage title wraps to 2 lines in the source image, so the overlay starts lower.
         static const int VANILLA_PAD_LINES[4] = {0,0,0,1};
-        static const float VANILLA_Y_OFFSET[4] = {3.f,3.f,3.f,8.f};
+        static const float VANILLA_Y_OFFSET[4] = {3.f,3.f,3.f,18.f};
         static const float VANILLA_X_OFFSET_PCT = -0.01f;
         for(int i=0;i<(int)cards.size();++i){
             cards[i].card.tryLoad();
