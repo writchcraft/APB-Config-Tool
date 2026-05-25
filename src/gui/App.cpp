@@ -479,7 +479,7 @@ static void loadConfig(){
             const json& vit = root["vehicle_item_types"];
             copyString(s_vehicle.intPath, sizeof(s_vehicle.intPath), jsonString(vit, "int_path"));
             copyString(s_vehicle.outPath, sizeof(s_vehicle.outPath), jsonString(vit, "out_path"));
-            applyColourSchemeJson(vit["colours"], s_vehicle.colours);
+            applyColourSchemeJson(vit["colours"], s_vehicle.colours, false);
         }
 
         if(root.contains("armas") && root["armas"].is_object()){
