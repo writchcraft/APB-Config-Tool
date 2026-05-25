@@ -655,27 +655,24 @@ struct PagePlayerRoles {
         const float availW = ImGui::GetContentRegionAvail().x;
         const float gap = 12.f;
         const float preferredImageW = 245.f;
-        const float minimumImageW = 170.f;
-        int columns = 1;
-        for(int candidate = 4; candidate >= 1; --candidate){
-            const float candidateW = (availW - gap * (candidate - 1)) / candidate;
-            if(candidateW >= minimumImageW){
-                columns = candidate;
-                break;
-            }
-        }
+        int columns = PreviewGridColumns(availW, preferredImageW, gap);
         const float imageW = std::min(preferredImageW,
             (availW - gap * (columns - 1)) / columns);
+        const float rowW = (columns * imageW) + ((columns - 1) * gap);
+        const float centerX = std::max(0.f, (availW - rowW) * 0.5f);
 
         ImGui::BeginChild("##prolespreview", {0, 0}, false);
         for(int i = 0; i < (int)previewCards.size(); ++i){
             auto& card = previewCards[i];
             card.tryLoad();
 
-            if(columns > 1 && (i % columns) != 0)
+            if((i % columns) != 0)
                 ImGui::SameLine(0.f, gap);
-            else if(i > 0)
-                ImGui::Spacing();
+            else {
+                if(i > 0)
+                    ImGui::Spacing();
+                ImGui::SetCursorPosX(centerX);
+            }
 
             if(card.srv){
                 const float scale = imageW / (card.imgW > 0 ? (float)card.imgW : imageW);
@@ -924,24 +921,24 @@ struct PageContactDescription {
         const float availW = ImGui::GetContentRegionAvail().x;
         const float gap = 12.f;
         const float preferredImageW = 245.f;
-        const float minimumImageW = 170.f;
-        int columns = 1;
-        for(int candidate = 4; candidate >= 1; --candidate){
-            const float candidateW = (availW - gap * (candidate - 1)) / candidate;
-            if(candidateW >= minimumImageW){ columns = candidate; break; }
-        }
+        int columns = PreviewGridColumns(availW, preferredImageW, gap);
         const float imageW = std::min(preferredImageW,
             (availW - gap * (columns - 1)) / columns);
+        const float rowW = (columns * imageW) + ((columns - 1) * gap);
+        const float centerX = std::max(0.f, (availW - rowW) * 0.5f);
 
         ImGui::BeginChild("##contactspreview", {0, 0}, false);
         for(int i = 0; i < (int)cards.size(); ++i){
             auto& card = cards[i];
             card.tryLoad();
 
-            if(columns > 1 && (i % columns) != 0)
+            if((i % columns) != 0)
                 ImGui::SameLine(0.f, gap);
-            else if(i > 0)
-                ImGui::Spacing();
+            else {
+                if(i > 0)
+                    ImGui::Spacing();
+                ImGui::SetCursorPosX(centerX);
+            }
 
             if(card.srv){
                 const float scale = imageW / (card.imgW > 0 ? (float)card.imgW : imageW);
