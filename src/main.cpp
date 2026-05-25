@@ -186,7 +186,6 @@ static void InitDocumentsFolder(){
     std::string base = GetAppDocumentsDir();
     fs::create_directories(base);
     fs::create_directories(base+"\\Themes");
-    fs::create_directories(base+"\\Presets");
 }
 
 namespace apb::gui {

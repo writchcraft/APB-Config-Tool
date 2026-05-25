@@ -178,7 +178,7 @@ bool generateWeaponDescriptionsFile(
         fs::path p(inputIntPath);
         fs::path outDir(DownloadsDir());
         fs::create_directories(outDir);
-        outPath=(outDir/(p.stem().string()+"_Generated.INT")).string();
+        outPath=(outDir/(p.stem().string()+"_Generated.GER")).string();
     }
     writeUtf16LE(outPath,body);
     return true;

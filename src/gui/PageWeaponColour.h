@@ -89,8 +89,6 @@ struct PageWeaponColour {
         fonts = availableFonts();
         gunTypes = weaponGunTypes();
         categories.resize(gunTypes.size());
-        if(!categories.empty())
-            categories[0].enabled = true;
         for(auto& st : categories){
             applyDefaultPalette(st);
             st.fontIdx = fontIdx;

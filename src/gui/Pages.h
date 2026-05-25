@@ -1865,7 +1865,7 @@ struct PageWeaponItemTypes {
                 fs::path inP(ip);
                 fs::path outDir = od.empty() ? fs::path(DownloadsDir()) : fs::path(od);
                 fs::create_directories(outDir);
-                fs::path outFile = outDir / (inP.stem().string() + "_Generated.INT");
+                fs::path outFile = outDir / (inP.stem().string() + "_Generated.GER");
                 bool completed = generateWeaponDescriptionsFile(ip,outFile.string(),sc,si,gs,ge,15,wk,
                     [this](int d,int t,const std::string& k){prog.set(d,t,k);},
                     &cancelRequested);
@@ -2811,6 +2811,13 @@ struct PageCredits {
         SectionLabel("Contributors");
         ImGui::Text("Author");        ImGui::SameLine(120); ImGui::TextUnformatted("writch");
         ImGui::Text("Credits");       ImGui::SameLine(120); ImGui::TextWrapped("Mewpri - original creator of the ItemTypes stat maker");
+        ImGui::Text("Resources");     ImGui::SameLine(120);
+        ImGui::TextUnformatted("myamai - Localization Resources");
+        ImGui::SameLine();
+        if(ImGui::SmallButton("https://myamai.neocities.org/apb/localization##myamai")){
+            ShellExecuteA(nullptr, "open", "https://myamai.neocities.org/apb/localization",
+                nullptr, nullptr, SW_SHOWNORMAL);
+        }
         SectionLabel("Legal");
         ImGui::TextColored(Col::SUBTEXT,
             "This tool is not affiliated with Little Orbit or GamersFirst.\n"
@@ -2825,6 +2832,155 @@ struct PageCredits {
 struct PageSettings {
     char premadeConfigDir[MAX_PATH * 2] = {};
     bool premadeConfigDirSeeded = false;
+    char themeName[128] = {};
+    int themeBuildModeIdx = 1; // 0=Smooth, 1=Triple
+    float themeStart[3] = {1.f,1.f,1.f};
+    float themeMid[3]   = {1.f,1.f,1.f};
+    float themeEnd[3]   = {1.f,1.f,1.f};
+    std::string themeSaveStatus;
+    bool themeSaveStatusOk = true;
+
+    static std::string trimCopy(const std::string& value){
+        size_t start = 0;
+        while(start < value.size() && std::isspace((unsigned char)value[start])) ++start;
+        size_t end = value.size();
+        while(end > start && std::isspace((unsigned char)value[end - 1])) --end;
+        return value.substr(start, end - start);
+    }
+
+    static std::string escapeJson(const std::string& value){
+        std::string out;
+        out.reserve(value.size() + 8);
+        for(char ch : value){
+            switch(ch){
+                case '\\': out += "\\\\"; break;
+                case '"':  out += "\\\""; break;
+                case '\n': out += "\\n"; break;
+                case '\r': out += "\\r"; break;
+                case '\t': out += "\\t"; break;
+                default:   out += ch; break;
+            }
+        }
+        return out;
+    }
+
+    static std::string sanitizeFileStem(const std::string& name){
+        std::string stem;
+        stem.reserve(name.size());
+        for(char ch : name){
+            if(std::isalnum((unsigned char)ch)) stem += (char)std::tolower((unsigned char)ch);
+            else if(ch == ' ' || ch == '-' || ch == '_') stem += '_';
+        }
+        while(!stem.empty() && stem.back() == '_') stem.pop_back();
+        size_t lead = 0;
+        while(lead < stem.size() && stem[lead] == '_') ++lead;
+        stem.erase(0, lead);
+        return stem.empty() ? "theme" : stem;
+    }
+
+    static bool isReservedThemeName(const std::string& value){
+        if(value.size() != 6) return false;
+        return std::tolower((unsigned char)value[0]) == 'c' &&
+               std::tolower((unsigned char)value[1]) == 'u' &&
+               std::tolower((unsigned char)value[2]) == 's' &&
+               std::tolower((unsigned char)value[3]) == 't' &&
+               std::tolower((unsigned char)value[4]) == 'o' &&
+               std::tolower((unsigned char)value[5]) == 'm';
+    }
+
+    static void writeThemeColor(std::ostream& out, const RGB& color){
+        out << "[" << color.r << ", " << color.g << ", " << color.b << "]";
+    }
+
+    static RGB rgbFromFloats(const float color[3]){
+        return {color[0], color[1], color[2]};
+    }
+
+    std::vector<RGB> buildThemeStepped() const{
+        std::vector<RGB> stepped;
+        stepped.reserve(6);
+
+        const RGB start = rgbFromFloats(themeStart);
+        const RGB middle = rgbFromFloats(themeMid);
+        const RGB end = rgbFromFloats(themeEnd);
+
+        for(int i = 0; i < 6; ++i){
+            const double t = double(i) / 5.0;
+            if(themeBuildModeIdx == 0){
+                stepped.push_back(lerpRGB(start, end, t));
+            } else if(t <= 0.5){
+                stepped.push_back(lerpRGB(start, middle, t * 2.0));
+            } else {
+                stepped.push_back(lerpRGB(middle, end, (t - 0.5) * 2.0));
+            }
+        }
+
+        return stepped;
+    }
+
+    void setThemeSaveStatus(const std::string& message, bool ok){
+        themeSaveStatus = message;
+        themeSaveStatusOk = ok;
+    }
+
+    bool saveTheme(){
+        const std::string name = trimCopy(themeName);
+        if(name.empty()){
+            setThemeSaveStatus("Theme name is required.", false);
+            return false;
+        }
+        if(isReservedThemeName(name)){
+            setThemeSaveStatus("\"Custom\" is reserved.", false);
+            return false;
+        }
+
+        const std::vector<RGB> stepped = buildThemeStepped();
+        const RGB smoothStart = rgbFromFloats(themeStart);
+        const RGB smoothEnd = rgbFromFloats(themeEnd);
+        const RGB tripleMiddle = (themeBuildModeIdx == 0)
+            ? lerpRGB(smoothStart, smoothEnd, 0.5)
+            : rgbFromFloats(themeMid);
+
+        try{
+            std::filesystem::create_directories(ThemeLibrary::themesDir());
+            const std::filesystem::path path =
+                std::filesystem::path(ThemeLibrary::themesDir()) / (sanitizeFileStem(name) + ".json");
+
+            std::ofstream out(path, std::ios::binary | std::ios::trunc);
+            if(!out){
+                setThemeSaveStatus("Could not write theme file.", false);
+                return false;
+            }
+
+            out << "{\n";
+            out << "    \"name\": \"" << escapeJson(name) << "\",\n";
+            out << "    \"stepped\": [\n";
+            for(size_t i = 0; i < stepped.size(); ++i){
+                out << "        ";
+                writeThemeColor(out, stepped[i]);
+                out << (i + 1 < stepped.size() ? ",\n" : "\n");
+            }
+            out << "    ],\n";
+            out << "    \"smooth_start\": ";
+            writeThemeColor(out, smoothStart);
+            out << ",\n";
+            out << "    \"smooth_end\": ";
+            writeThemeColor(out, smoothEnd);
+            out << ",\n";
+            out << "    \"triple_middle\": ";
+            writeThemeColor(out, tripleMiddle);
+            out << "\n";
+            out << "}\n";
+            out.close();
+
+            ThemeLib().reload();
+            setThemeSaveStatus("Theme saved.", true);
+            return true;
+        } catch(const std::exception& e){
+            setThemeSaveStatus(std::string("Theme save failed: ") + e.what(), false);
+            return false;
+        }
+    }
 
     void syncPremadeConfigDir(){
         if(premadeConfigDirSeeded) return;
@@ -2846,7 +3002,7 @@ struct PageSettings {
         SectionNote("Shared application resources live here so the generator pages can stay focused on output configuration.");
 
         SectionLabel("Themes");
-        ImGui::TextWrapped("Theme presets are loaded from this folder. Add or edit JSON files here, then reload themes from the tool pages.");
+        ImGui::TextWrapped("Theme presets are loaded from this folder. You can save a new theme here directly or edit the JSON files by hand.");
         ImGui::Spacing();
 
         const std::string themesDir = ThemeLibrary::themesDir();
@@ -2861,6 +3017,61 @@ struct PageSettings {
         ImGui::SameLine();
         if(ImGui::Button("Open Themes Folder", {140.f, 0.f}))
             OpenInExplorer(themesDir);
+
+        ImGui::Spacing();
+        if(BeginSectionTable("##themeCreator", 124.f, 98.f)){
+            BeginSectionRow("Theme Name");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputText("##settingsThemeName", themeName, sizeof(themeName));
+
+            BeginSectionRow("Build From");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            static const char* THEME_BUILD_MODES[] = {"Smooth", "Triple"};
+            if(ImGui::BeginCombo("##settingsThemeMode", THEME_BUILD_MODES[themeBuildModeIdx])){
+                for(int i = 0; i < 2; ++i){
+                    if(ImGui::Selectable(THEME_BUILD_MODES[i], themeBuildModeIdx == i))
+                        themeBuildModeIdx = i;
+                    if(themeBuildModeIdx == i) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+
+            BeginSectionRow(themeBuildModeIdx == 0 ? "Colours" : "Start / Mid / End");
+            if(themeBuildModeIdx == 0){
+                ColorPickerButton("##settingsThemeStart", themeStart);
+                ImGui::SameLine();
+                ImGui::TextUnformatted("Start");
+                ImGui::SameLine();
+                ColorPickerButton("##settingsThemeEnd", themeEnd);
+                ImGui::SameLine();
+                ImGui::TextUnformatted("End");
+            } else {
+                ColorPickerButton("##settingsThemeStart", themeStart);
+                ImGui::SameLine();
+                ImGui::TextUnformatted("Start");
+                ImGui::SameLine();
+                ColorPickerButton("##settingsThemeMid", themeMid);
+                ImGui::SameLine();
+                ImGui::TextUnformatted("Mid");
+                ImGui::SameLine();
+                ColorPickerButton("##settingsThemeEnd", themeEnd);
+                ImGui::SameLine();
+                ImGui::TextUnformatted("End");
+            }
+
+            BeginSectionRow("Actions");
+            if(ImGui::Button("Save Theme", {110.f, 0.f}))
+                saveTheme();
+            ImGui::SameLine();
+            if(ImGui::Button("Reload Themes", {110.f, 0.f})){
+                ThemeLib().reload();
+                setThemeSaveStatus("Themes reloaded.", true);
+            }
+            EndSectionTable();
+        }
+
+        ImGui::TextColored(themeSaveStatusOk ? Col::SUBTEXT : Col::RED, "%s",
+            themeSaveStatus.empty() ? "Theme files are saved to Documents\\APBConfigTool\\Themes." : themeSaveStatus.c_str());
 
         SectionLabel("Premade Configs");
         SectionNote("Templates are scanned from this folder at runtime. Each immediate subfolder is treated as one premade config.");
