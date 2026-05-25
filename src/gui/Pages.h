@@ -309,8 +309,25 @@ struct ColourSchemeWidget {
     }
 
     const char* currentStyleLabel(const ThemeLibrary& lib) const {
-        if(presetEquipped && presetThemeIdx>=0 && presetThemeIdx<lib.count()) return "Preset";
         return BASE_SCHEMES[schemeIdx];
+    }
+
+    bool showsPresetControls() const {
+        return presetEquipped || schemeIdx == 3 || schemeIdx == 4;
+    }
+
+    const char* sectionNoteText() const {
+        if(presetEquipped) return "Preset colours are loaded. Editing them will switch the preset back to manual colours.";
+        if(schemeIdx == 0 || schemeIdx == 1)
+            return "Vanilla and APB.DB Stats use the original overlay colours, so presets are unavailable.";
+        if(schemeIdx == 2)
+            return "Single Colour uses one manual colour for the stat overlay.";
+        return "Choose a manual gradient or load a preset theme for the stat overlay.";
+    }
+
+    void clearPresetSelection(){
+        presetEquipped = false;
+        presetThemeIdx = -1;
     }
 
     void applyPresetTheme(int idx){
@@ -318,7 +335,6 @@ struct ColourSchemeWidget {
         if(idx<0 || idx>=lib.count()) return;
         presetEquipped = true;
         presetThemeIdx = idx;
-        schemeIdx = 3; // Presets are gradient-backed
         gradStart[0]=(float)lib.themes[idx].smoothStart.r;
         gradStart[1]=(float)lib.themes[idx].smoothStart.g;
         gradStart[2]=(float)lib.themes[idx].smoothStart.b;
@@ -364,11 +380,10 @@ struct ColourSchemeWidget {
         auto& lib = ThemeLib();
         if(schemeIdx < 0 || schemeIdx >= BASE_COUNT) schemeIdx = 0;
         if(presetEquipped && (presetThemeIdx<0 || presetThemeIdx>=lib.count())){
-            presetEquipped = false;
-            presetThemeIdx = -1;
+            clearPresetSelection();
         }
 
-        SectionNote("Choose a manual style or load a preset theme for the stat overlay.");
+        SectionNote(sectionNoteText());
 
         char tid[32]; snprintf(tid, sizeof(tid), "##cst%s", uid);
         if(BeginSectionTable(tid, 116.f, 184.f)){
@@ -378,81 +393,95 @@ struct ColourSchemeWidget {
             if(ImGui::BeginCombo(cid, currentStyleLabel(lib))){
                 for(int i=0;i<BASE_COUNT;++i){
                     if(ImGui::Selectable(BASE_SCHEMES[i], schemeIdx==i)){
-                        const bool leavingPresetForManualGradient = presetEquipped && (i == 3 || i == 4);
                         schemeIdx=i;
-                        presetEquipped=false;
-                        presetThemeIdx=-1;
-                        if(leavingPresetForManualGradient)
-                            setManualGradientWhite();
+                        clearPresetSelection();
                         changed=true;
                     }
                 }
                 ImGui::EndCombo();
             }
 
-            BeginSectionRow("Preset");
-            ImGui::SetNextItemWidth(-FLT_MIN);
-            char pid[32]; snprintf(pid,sizeof(pid),"##pr%s",uid);
-            std::string previewName = (presetEquipped && presetThemeIdx>=0 && presetThemeIdx<lib.count())
-                ? lib.themes[presetThemeIdx].name
-                : "-- select --";
-            if(ImGui::BeginCombo(pid, previewName.c_str())){
-                for(int i=0;i<lib.count();++i){
-                    bool sel = (presetEquipped && presetThemeIdx==i);
-                    if(ImGui::Selectable(lib.themes[i].name.c_str(), sel)){
-                        applyPresetTheme(i);
-                        changed = true;
+            if(showsPresetControls()){
+                BeginSectionRow("Theme");
+                ImGui::SetNextItemWidth(-FLT_MIN);
+                char pid[32]; snprintf(pid,sizeof(pid),"##pr%s",uid);
+                std::string previewName = (presetEquipped && presetThemeIdx>=0 && presetThemeIdx<lib.count())
+                    ? lib.themes[presetThemeIdx].name
+                    : "";
+                if(ImGui::BeginCombo(pid, previewName.c_str())){
+                    for(int i=0;i<lib.count();++i){
+                        bool sel = (presetEquipped && presetThemeIdx==i);
+                        if(ImGui::Selectable(lib.themes[i].name.c_str(), sel)){
+                            applyPresetTheme(i);
+                            changed = true;
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+                NextSectionAction();
+                char rbid[32]; snprintf(rbid,sizeof(rbid),"Reload##pr%s",uid);
+                if(ImGui::SmallButton(rbid)){
+                    lib.reload();
+                    if(presetEquipped && (presetThemeIdx<0 || presetThemeIdx>=lib.count())){
+                        clearPresetSelection();
+                        changed=true;
                     }
                 }
-                ImGui::EndCombo();
+                ImGui::SameLine();
+                char opfbid[40]; snprintf(opfbid,sizeof(opfbid),"Open Folder##pr%s",uid);
+                if(ImGui::SmallButton(opfbid)) OpenInExplorer(ThemeLibrary::themesDir());
+            } else {
+                clearPresetSelection();
             }
-            NextSectionAction();
-            char rbid[32]; snprintf(rbid,sizeof(rbid),"Reload##pr%s",uid);
-            if(ImGui::SmallButton(rbid)){
-                lib.reload();
-                if(presetEquipped && (presetThemeIdx<0 || presetThemeIdx>=lib.count())){
-                    presetEquipped=false;
-                    presetThemeIdx=-1;
-                    changed=true;
-                }
-            }
-            ImGui::SameLine();
-            char opfbid[40]; snprintf(opfbid,sizeof(opfbid),"Open Folder##pr%s",uid);
-            if(ImGui::SmallButton(opfbid)) OpenInExplorer(ThemeLibrary::themesDir());
 
             if(!presetEquipped && schemeIdx==2){
                 BeginSectionRow("Single Colour");
                 char singleId[32]; snprintf(singleId,sizeof(singleId),"##sing%s",uid);
                 if(ColorPickerButton(singleId, singleCol)) changed=true;
             }
-            if(!presetEquipped && schemeIdx==3){
+            if(schemeIdx==3){
                 BeginSectionRow("Gradient");
                 char p1[32],p2[32];
                 snprintf(p1,sizeof(p1),"##gs%s",uid);
                 snprintf(p2,sizeof(p2),"##ge%s",uid);
-                if(ColorPickerButton(p1,gradStart)) changed=true;
+                if(ColorPickerButton(p1,gradStart)){
+                    clearPresetSelection();
+                    changed=true;
+                }
                 ImGui::SameLine();
                 ImGui::TextUnformatted("Start");
                 ImGui::SameLine();
-                if(ColorPickerButton(p2,gradEnd)) changed=true;
+                if(ColorPickerButton(p2,gradEnd)){
+                    clearPresetSelection();
+                    changed=true;
+                }
                 ImGui::SameLine();
                 ImGui::TextUnformatted("End");
             }
-            if(!presetEquipped && schemeIdx==4){
+            if(schemeIdx==4){
                 BeginSectionRow("Triple");
                 char p1[32],pm[32],p2[32];
                 snprintf(p1,sizeof(p1),"##gts%s",uid);
                 snprintf(pm,sizeof(pm),"##gtm%s",uid);
                 snprintf(p2,sizeof(p2),"##gte%s",uid);
-                if(ColorPickerButton(p1,gradStart)) changed=true;
+                if(ColorPickerButton(p1,gradStart)){
+                    clearPresetSelection();
+                    changed=true;
+                }
                 ImGui::SameLine();
                 ImGui::TextUnformatted("1");
                 ImGui::SameLine();
-                if(ColorPickerButton(pm,tripleMid)) changed=true;
+                if(ColorPickerButton(pm,tripleMid)){
+                    clearPresetSelection();
+                    changed=true;
+                }
                 ImGui::SameLine();
                 ImGui::TextUnformatted("2");
                 ImGui::SameLine();
-                if(ColorPickerButton(p2,gradEnd)) changed=true;
+                if(ColorPickerButton(p2,gradEnd)){
+                    clearPresetSelection();
+                    changed=true;
+                }
                 ImGui::SameLine();
                 ImGui::TextUnformatted("3");
             }
