@@ -59,6 +59,11 @@ static ImU32 SamplePreviewTextGradient(const PreviewTextGradient& gradient, floa
     return LerpCol(gradient.middle, gradient.end, (t - 0.5f) * 2.f);
 }
 
+static int PreviewGridColumns(float availableW, float cardW, float colGap){
+    const float fourUpW = (cardW * 4.f) + (colGap * 3.f);
+    return availableW >= fourUpW ? 4 : 2;
+}
+
 // Draw stat lines with left-to-right gradient across each key label
 static float DrawStatLines(
     ImDrawList* dl,
@@ -1973,9 +1978,12 @@ struct PageWeaponItemTypes {
 
         ImGui::BeginChild("##witpreview",{0,760.f},false);
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        ImVec2 win = ImGui::GetWindowPos();
-        float cx = win.x + 4.f;
-        float cy = win.y + 4.f;
+        ImVec2 origin = ImGui::GetCursorScreenPos();
+        float availableW = ImGui::GetContentRegionAvail().x;
+        int columns = PreviewGridColumns(availableW, cardW, colGap);
+        float totalW = (columns * cardW) + ((columns - 1) * colGap);
+        float cx = origin.x + std::max(0.f, (availableW - totalW) * 0.5f);
+        float cy = origin.y;
         bool showStats = (colours.schemeIdx != 0);
         auto wrapDescription = [](const std::string& desc, int maxChars = 46){
             std::vector<std::pair<std::string,std::string>> rows;
@@ -2007,8 +2015,8 @@ struct PageWeaponItemTypes {
         static const float VANILLA_X_OFFSET_PCT = -0.01f;
         for(int i=0;i<(int)cards.size();++i){
             cards[i].card.tryLoad(); // retry each frame until success
-            float px = cx + (i%2)*(cardW+colGap);
-            float py = cy + (i/2)*rowStep;
+            float px = cx + (i%columns)*(cardW+colGap);
+            float py = cy + (i/columns)*rowStep;
             if(showStats){
                 float statsY = VANILLA_Y_OFFSET[i];
                 float statsX = cardW * VANILLA_X_OFFSET_PCT - 5.f;
@@ -2192,9 +2200,12 @@ struct PageVehicleItemTypes {
 
         ImGui::BeginChild("##vitpreview",{0,760.f},false);
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        ImVec2 win = ImGui::GetWindowPos();
-        float cx = win.x + 4.f;
-        float cy = win.y + 4.f;
+        ImVec2 origin = ImGui::GetCursorScreenPos();
+        float availableW = ImGui::GetContentRegionAvail().x;
+        int columns = PreviewGridColumns(availableW, cardW, colGap);
+        float totalW = (columns * cardW) + ((columns - 1) * colGap);
+        float cx = origin.x + std::max(0.f, (availableW - totalW) * 0.5f);
+        float cy = origin.y;
         bool showStats = (colours.schemeIdx != 0);
         auto wrapDescription = [](const std::string& desc, int maxChars = 46){
             std::vector<std::pair<std::string,std::string>> rows;
@@ -2226,8 +2237,8 @@ struct PageVehicleItemTypes {
         static const float VANILLA_X_OFFSET_PCT = -0.01f;
         for(int i=0;i<(int)cards.size();++i){
             cards[i].card.tryLoad();
-            float px = cx + (i%2)*(cardW+colGap);
-            float py = cy + (i/2)*rowStep;
+            float px = cx + (i%columns)*(cardW+colGap);
+            float py = cy + (i/columns)*rowStep;
             if(showStats){
                 float statsY = VANILLA_Y_OFFSET[i];
                 float statsX = cardW * VANILLA_X_OFFSET_PCT - 5.f;
