@@ -51,9 +51,9 @@ IDR_IMG_WEAPON_UL3       RCDATA "..\\Assets\\Images_WeaponItemTypes\\ul3_weapon_
 
 IDR_IMG_PLAYER_ROLE_GUNSLINGER   RCDATA "..\\Assets\\Images_PlayerRoles\\gunslinger.png"
 IDR_IMG_PLAYER_ROLE_RIFLEMAN     RCDATA "..\\Assets\\Images_PlayerRoles\\rifleman.png"
-IDR_IMG_PLAYER_ROLE_BURGLAR      RCDATA "..\\Assets\\Images_PlayerRoles\\burglar.png"
+IDR_IMG_PLAYER_ROLE_GRAFFITI     RCDATA "..\\Assets\\Images_PlayerRoles\\graffiti.png"
 IDR_IMG_PLAYER_ROLE_EPIDEMIC2024 RCDATA "..\\Assets\\Images_PlayerRoles\\epidemic_2024.png"
-IDR_IMG_PLAYER_ROLE_BURGLAR_SHORT RCDATA "..\\Assets\\Images_PlayerRoles\\burglar_short.png"
+IDR_IMG_PLAYER_ROLE_GRAFFITI_SHORT RCDATA "..\\Assets\\Images_PlayerRoles\\graffiti_short.png"
 
 IDR_IMG_CONTACT_UNLOCKS_ARLON   RCDATA "..\\Assets\\Images_Contacts\\Unlocks_Arlon.png"
 IDR_IMG_CONTACT_UNLOCKS_BIRTH   RCDATA "..\\Assets\\Images_Contacts\\Unlocks_Birth.png"

@@ -624,11 +624,11 @@ struct PagePlayerRoles {
         }
         configurePreviewCard(previewCards[0],
             useShortEquipmentNames
-                ? "Assets\\Images_PlayerRoles\\burglar_short.png"
-                : "Assets\\Images_PlayerRoles\\burglar.png",
+                ? "Assets\\Images_PlayerRoles\\graffiti_short.png"
+                : "Assets\\Images_PlayerRoles\\graffiti.png",
             useShortEquipmentNames
-                ? IDR_IMG_PLAYER_ROLE_BURGLAR_SHORT
-                : IDR_IMG_PLAYER_ROLE_BURGLAR);
+                ? IDR_IMG_PLAYER_ROLE_GRAFFITI_SHORT
+                : IDR_IMG_PLAYER_ROLE_GRAFFITI);
     }
 
     static std::string latestLogLine(const std::string& text){
