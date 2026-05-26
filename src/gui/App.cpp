@@ -18,7 +18,7 @@ using nlohmann::json;
 enum PageId {
     PAGE_GRADIENT=0, PAGE_WCOLOUR,
     PAGE_VEHICLE, PAGE_WEAPON,
-    PAGE_LOCALIZATION, PAGE_ARMAS, PAGE_PLAYER_ROLES, PAGE_HEX_CONVERTER, PAGE_CREDITS,
+    PAGE_LOCALIZATION, PAGE_PLAYER_ROLES, PAGE_HEX_CONVERTER, PAGE_CREDITS,
     PAGE_RELOAD_RESUPPLY,
     PAGE_CONTACTS,
     PAGE_PREMADE_CONFIGS,
@@ -31,7 +31,6 @@ static PageWeaponColour       s_wcolour;
 static PageVehicleItemTypes   s_vehicle;
 static PageWeaponItemTypes    s_weapon;
 static PageLocalization       s_localization;
-static PageArmasScrape        s_armas;
 static PagePlayerRoles        s_playerRoles;
 static PageHexConverter       s_hexConverter;
 static PageCredits            s_credits;
@@ -49,13 +48,12 @@ static std::vector<NavGroup> s_nav = {
     { "Content",      {{"Player Roles",PAGE_PLAYER_ROLES},{"Reload / Resupply Text",PAGE_RELOAD_RESUPPLY},{"Contact Description",PAGE_CONTACTS}}, false },
     { "Templates",    {{"Premade Configs",PAGE_PREMADE_CONFIGS}}, false },
     { "Reference",    {{"Localization",PAGE_LOCALIZATION},{"Hex Converter",PAGE_HEX_CONVERTER}}, false },
-    { "Utilities",    {{"ARMAS Scanner",PAGE_ARMAS}}, false },
     { "Application",  {{"Settings",PAGE_SETTINGS},{"Credits",PAGE_CREDITS}}, false },
 };
 static const char* pageCategory[PAGE_COUNT] = {
     "Colour Tools","Colour Tools",
     "Stats","Stats",
-    "Reference","Utilities","Content","Reference","Application","Content","Content","Templates","Application",
+    "Reference","Content","Reference","Application","Content","Content","Templates","Application",
     "Colour Tools"
 };
 static bool s_configLoaded = false;
@@ -328,13 +326,6 @@ static bool saveConfig(){
         writeColourScheme(out, s_vehicle.colours, "    ");
         out << "\n  },\n";
 
-        out << "  \"armas\": {\n";
-        out << "    \"start_id\": " << s_armas.startId << ",\n";
-        out << "    \"end_id\": " << s_armas.endId << ",\n";
-        out << "    \"threads\": " << s_armas.threads << ",\n";
-        out << "    \"out_path\": \"" << jsonEscape(s_armas.outPath) << "\"\n";
-        out << "  },\n";
-
         out << "  \"player_roles\": {\n";
         out << "    \"int_path\": \"" << jsonEscape(s_playerRoles.intPath) << "\",\n";
         out << "    \"out_path\": \"" << jsonEscape(s_playerRoles.outPath) << "\",\n";
@@ -482,14 +473,6 @@ static void loadConfig(){
             applyColourSchemeJson(vit["colours"], s_vehicle.colours, false);
         }
 
-        if(root.contains("armas") && root["armas"].is_object()){
-            const json& armas = root["armas"];
-            s_armas.startId = jsonInt(armas, "start_id", s_armas.startId);
-            s_armas.endId = jsonInt(armas, "end_id", s_armas.endId);
-            s_armas.threads = std::clamp(jsonInt(armas, "threads", s_armas.threads), 1, 128);
-            copyString(s_armas.outPath, sizeof(s_armas.outPath), jsonString(armas, "out_path"));
-        }
-
         if(root.contains("player_roles") && root["player_roles"].is_object()){
             const json& playerRoles = root["player_roles"];
             copyString(s_playerRoles.intPath, sizeof(s_playerRoles.intPath), jsonString(playerRoles, "int_path"));
@@ -554,7 +537,6 @@ static void drawPage(){
         case PAGE_VEHICLE:      s_vehicle.draw();      break;
         case PAGE_WEAPON:       s_weapon.draw();       break;
         case PAGE_LOCALIZATION: s_localization.draw(); break;
-        case PAGE_ARMAS:        s_armas.draw();        break;
         case PAGE_PLAYER_ROLES: s_playerRoles.draw();  break;
         case PAGE_HEX_CONVERTER:s_hexConverter.draw(); break;
         case PAGE_CREDITS:      s_credits.draw();      break;
@@ -572,7 +554,6 @@ static bool selectedToolIsRunning(){
         case PAGE_WCOLOUR_SPECIFIC:return s_wcolour.isActionRunning();
         case PAGE_VEHICLE:       return s_vehicle.isActionRunning();
         case PAGE_WEAPON:        return s_weapon.isActionRunning();
-        case PAGE_ARMAS:         return s_armas.isActionRunning();
         case PAGE_PLAYER_ROLES:  return s_playerRoles.isActionRunning();
         case PAGE_RELOAD_RESUPPLY:return s_reloadResupply.isActionRunning();
         case PAGE_CONTACTS:      return s_contacts.isActionRunning();
@@ -588,7 +569,6 @@ static bool selectedToolCanStart(){
         case PAGE_WCOLOUR_SPECIFIC:return s_wcolour.canStartAction();
         case PAGE_VEHICLE:       return s_vehicle.canStartAction();
         case PAGE_WEAPON:        return s_weapon.canStartAction();
-        case PAGE_ARMAS:         return s_armas.canStartAction();
         case PAGE_PLAYER_ROLES:  return s_playerRoles.canStartAction();
         case PAGE_RELOAD_RESUPPLY:return s_reloadResupply.canStartAction();
         case PAGE_CONTACTS:      return s_contacts.canStartAction();
@@ -609,7 +589,6 @@ static void startSelectedTool(){
         case PAGE_WCOLOUR_SPECIFIC:s_wcolour.startAction(); break;
         case PAGE_VEHICLE:       s_vehicle.startAction();  break;
         case PAGE_WEAPON:        s_weapon.startAction();   break;
-        case PAGE_ARMAS:         s_armas.startAction();    break;
         case PAGE_PLAYER_ROLES:  s_playerRoles.startAction(); break;
         case PAGE_RELOAD_RESUPPLY:s_reloadResupply.startAction(); break;
         case PAGE_CONTACTS:      s_contacts.startAction(); break;
@@ -625,7 +604,6 @@ static void cancelSelectedTool(){
         case PAGE_WCOLOUR_SPECIFIC:s_wcolour.cancelAction(); break;
         case PAGE_VEHICLE:       s_vehicle.cancelAction();  break;
         case PAGE_WEAPON:        s_weapon.cancelAction();   break;
-        case PAGE_ARMAS:         s_armas.cancelAction();    break;
         case PAGE_PLAYER_ROLES:  s_playerRoles.cancelAction(); break;
         case PAGE_CONTACTS:      s_contacts.cancelAction(); break;
         case PAGE_PREMADE_CONFIGS:s_premadeConfigs.cancelAction(); break;

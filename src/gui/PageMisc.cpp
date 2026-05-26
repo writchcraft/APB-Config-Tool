@@ -1,9 +1,8 @@
 // src/gui/PageMisc.cpp
-// InventoryItemTypes + ArmasScrape + Credits + Localization pages
+// InventoryItemTypes + Credits + Localization pages
 #include "gui/App.h"
 #include "imgui.h"
 #include "backend/InventoryItemTypes.h"
-#include "backend/ArmasScraper.h"
 #include <string>
 #include <thread>
 #include <atomic>
@@ -109,138 +108,6 @@ struct InventoryItemTypesPage : IPage {
 IPage* makeInventoryItemTypesPage() { return new InventoryItemTypesPage; }
 
 // ═══════════════════════════════════════════════════════════════
-//  ArmasScrape page
-// ═══════════════════════════════════════════════════════════════
-struct HitRow { std::string title, url; };
-
-struct ArmasScrapePage : IPage {
-    int startId  = 0;
-    int endId    = 25000;
-    int threads  = 32;
-    char baseUrl[512] = "https://www.gamersfirst.com/marketplace/ingame/product_details.php?storetype=g1c&gameID=20&catID=62&subcatID=258&productId=";
-    char outPath[1024] = "";
-    std::string logText;
-    std::string statusText = "Idle";
-    int  progressDone=0, progressTotal=1;
-    std::vector<HitRow> hits;
-    std::atomic<bool> running{false};
-    std::atomic<bool> stopFlag{false};
-    std::string lastOut;
-    bool outReady=false;
-    std::mutex hitsMtx;
-    LogQueue logQ;
-    ArmasScraper* scraperPtr = nullptr;
-
-    const char* title() override { return "ARMAS Scanner"; }
-
-    void draw() override {
-        // Drain
-        std::string line; while(logQ.pop(line)) logText += line+"\n";
-
-        ImGui::TextColored(COL_YELLOW, "ARMAS Product ID Scanner");
-        ImGui::Spacing();
-
-        ImGui::Text("Start ID");  ImGui::SameLine(120.f); ImGui::SetNextItemWidth(100.f); ImGui::InputInt("##sid",&startId);
-        ImGui::Text("End ID");    ImGui::SameLine(120.f); ImGui::SetNextItemWidth(100.f); ImGui::InputInt("##eid",&endId);
-        ImGui::Text("Threads");   ImGui::SameLine(120.f); ImGui::SetNextItemWidth(80.f);  ImGui::InputInt("##thr",&threads);
-        ImGui::Text("Base URL");  ImGui::SameLine(120.f); ImGui::SetNextItemWidth(-1.f);  ImGui::InputText("##burl",baseUrl,sizeof(baseUrl));
-        ImGui::Text("Output");    ImGui::SameLine(120.f); ImGui::SetNextItemWidth(-1.f);  ImGui::InputText("##aout",outPath,sizeof(outPath));
-
-        ImGui::Spacing();
-
-        bool busy = running.load();
-        if (!busy) {
-            if (ImGui::Button("Start##armas")) startScrape();
-        } else {
-            if (ImGui::Button("Stop##armas")) stopScrape();
-        }
-
-        if (outReady) {
-            ImGui::SameLine();
-            if (ImGui::Button("Open Output##armas"))
-                ShellExecuteA(nullptr,"open",lastOut.c_str(),nullptr,nullptr,SW_SHOW);
-        }
-
-        // Progress
-        ImGui::Spacing();
-        float pct = progressTotal ? (float)progressDone/progressTotal : 0.f;
-        ImGui::ProgressBar(pct, {-1.f,0.f});
-        ImGui::Text("%s", statusText.c_str());
-
-        // Hits table
-        ImGui::Spacing();
-        ImGui::TextColored(COL_YELLOW, "Found Items  (%d)", (int)hits.size());
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, COL_DARK_BG);
-        if (ImGui::BeginTable("##hits", 2,
-            ImGuiTableFlags_Borders|ImGuiTableFlags_RowBg|ImGuiTableFlags_ScrollY,
-            {0.f, 200.f})) {
-            ImGui::TableSetupColumn("Name"); ImGui::TableSetupColumn("URL");
-            ImGui::TableHeadersRow();
-            std::lock_guard<std::mutex> lk(hitsMtx);
-            for (auto& h : hits) {
-                ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(0); ImGui::TextUnformatted(h.title.c_str());
-                ImGui::TableSetColumnIndex(1);
-                if (ImGui::Selectable(h.url.c_str(), false))
-                    ShellExecuteA(nullptr,"open",h.url.c_str(),nullptr,nullptr,SW_SHOW);
-            }
-            ImGui::EndTable();
-        }
-        ImGui::PopStyleColor();
-
-        ImGui::Spacing();
-        ImGui::PushStyleColor(ImGuiCol_FrameBg, COL_DARK_BG);
-        float logH = ImGui::GetContentRegionAvail().y - 4.f;
-        ImGui::InputTextMultiline("##arLog", logText.data(), logText.size()+1,
-            {-1.f, std::max(60.f, logH)}, ImGuiInputTextFlags_ReadOnly);
-        ImGui::PopStyleColor();
-    }
-
-    void startScrape() {
-        if (running.load()) return;
-        logText.clear(); { std::lock_guard<std::mutex> lk(hitsMtx); hits.clear(); }
-        outReady=false; progressDone=0; statusText="Starting…"; stopFlag=false; running=true;
-
-        ScrapeConfig cfg;
-        cfg.startId=startId; cfg.endId=endId; cfg.threads=threads;
-        cfg.outPath=QString::fromUtf8(outPath);
-        cfg.baseUrl=QString::fromUtf8(baseUrl);
-        cfg.includeTitles=true;
-
-        std::thread([=]() mutable {
-            ArmasScraper sc(cfg, nullptr);
-            scraperPtr = &sc;
-            QString out = sc.run(
-                [this](int d,int t,const QString& m){
-                    progressDone=d; progressTotal=t;
-                    statusText=m.toStdString();
-                },
-                [this](int,const QString& url,const QString& ttl){
-                    std::lock_guard<std::mutex> lk(hitsMtx);
-                    hits.push_back({ttl.toStdString(), url.toStdString()});
-                });
-            lastOut = out.toStdString(); outReady=!lastOut.empty();
-            statusText = "Done."; running=false; scraperPtr=nullptr;
-        }).detach();
-    }
-
-    void stopScrape() {
-        if (scraperPtr) scraperPtr->stop();
-        statusText="Stopping…";
-    }
-
-    void restoreDefaults() override {
-        startId=0; endId=25000; threads=32;
-        logText.clear(); statusText="Idle";
-        progressDone=0; progressTotal=1; outReady=false;
-        { std::lock_guard<std::mutex> lk(hitsMtx); hits.clear(); }
-    }
-    void applySettings() override {}
-};
-
-IPage* makeArmasScrapePage() { return new ArmasScrapePage; }
-
-// ═══════════════════════════════════════════════════════════════
 //  Credits page
 // ═══════════════════════════════════════════════════════════════
 struct CreditsPage : IPage {
@@ -252,7 +119,7 @@ struct CreditsPage : IPage {
             "An open-source localisation and configuration utility for "
             "All Points Bulletin: Reloaded.\n\n"
             "Provides weapon stat generation, vehicle stat generation, "
-            "inventory merging, gradient tools, and ARMAS product scanning.");
+            "inventory merging, and gradient tools.");
         ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
 
         auto row = [](const char* k, const char* v){

@@ -81,7 +81,7 @@ namespace Col {
 enum class Page {
     GradientMaker=0, WeaponColour,
     InventoryItemTypes, WeaponItemTypes, VehicleItemTypes,
-    ArmasScrape, Localization, Credits, COUNT
+    Localization, Credits, COUNT
 };
 
 // ── Thread-safe log ───────────────────────────────────────────────────────

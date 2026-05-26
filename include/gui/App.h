@@ -69,7 +69,6 @@ IPage* makeWeaponColourPage();
 IPage* makeInventoryItemTypesPage();
 IPage* makeVehicleItemTypesPage();
 IPage* makeWeaponItemTypesPage();
-IPage* makeArmasScrapePage();
 IPage* makeCreditsPage();
 IPage* makeLocalizationPage();
 

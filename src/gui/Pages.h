@@ -7,7 +7,6 @@
 #include "backend/WeaponColour.h"
 #include "backend/WeaponItemTypes.h"
 #include "backend/VehicleItemTypes.h"
-#include "backend/ArmasScraper.h"
 #include "backend/AppDirs.h"
 #include "backend/GradientMaker.h"
 #include "backend/ImageLoader.h"
@@ -2253,117 +2252,6 @@ struct PageVehicleItemTypes {
         std::string t=log.get();
         SectionLabel("Log");
         ReadOnlyLogBox("##vitlog", t, {-1.f, 100.f});
-        ImGui::EndChild();
-    }
-};
-
-// ══════════════════════════════════════════════════════════════════════════
-// PageArmasScrape
-// ══════════════════════════════════════════════════════════════════════════
-struct PageArmasScrape {
-    int  startId=0, endId=25000, threads=32;
-    char outPath[MAX_PATH]={};
-    struct Hit{ int pid; std::string url,title; };
-    std::vector<Hit> hits;
-    std::mutex hitMu;
-    Progress prog;
-    std::atomic<bool> running{false};
-    ArmasScraper* scraper=nullptr;
-    std::mutex scraperMu;
-
-    bool isActionRunning() const { return running.load(); }
-    bool canStartAction() const { return !running.load(); }
-
-    void startAction(){
-        if(!canStartAction()) return;
-        {std::lock_guard<std::mutex>lk(hitMu); hits.clear();}
-        prog.reset(endId-startId+1);
-        running=true;
-        ScrapeConfig cfg; cfg.startId=startId; cfg.endId=endId; cfg.threads=threads; cfg.outPath=outPath;
-        std::thread([this,cfg](){
-            {
-                std::lock_guard<std::mutex>lk(scraperMu);
-                scraper=new ArmasScraper(cfg);
-            }
-            scraper->run(
-                [this](int d,int t,const std::string& s){prog.set(d,t,s);},
-                [this](int pid,const std::string& url,const std::string& title){
-                    std::lock_guard<std::mutex>lk(hitMu); hits.push_back({pid,url,title});
-                });
-            {
-                std::lock_guard<std::mutex>lk(scraperMu);
-                delete scraper;
-                scraper=nullptr;
-            }
-            running=false;
-        }).detach();
-    }
-
-    void cancelAction(){
-        std::lock_guard<std::mutex>lk(scraperMu);
-        if(scraper) scraper->stop();
-    }
-
-    void draw(){
-        ImGui::BeginChild("##as",{0,0},false);
-        SectionLabel("ARMAS Product ID Scanner");
-        SectionNote("Scan a product ID range and capture any matching marketplace entries to a report file.");
-
-        SectionLabel("Scan Setup");
-        if(BeginSectionTable("##assetup", 116.f, 86.f)){
-            BeginSectionRow("Start ID");
-            ImGui::SetNextItemWidth(120.f);
-            ImGui::InputInt("##asst",&startId);
-
-            BeginSectionRow("End ID");
-            ImGui::SetNextItemWidth(120.f);
-            ImGui::InputInt("##asen",&endId);
-
-            BeginSectionRow("Threads");
-            ImGui::SetNextItemWidth(120.f);
-            ImGui::InputInt("##asth",&threads);
-            threads=std::max(1,std::min(128,threads));
-
-            BeginSectionRow("Output");
-            ImGui::SetNextItemWidth(-FLT_MIN);
-            ImGui::InputText("##asop",outPath,MAX_PATH);
-            NextSectionAction();
-            if(ImGui::Button("Browse##as")){
-                std::string s;
-                if(BrowseSaveFile(s,"Text Files\0*.txt\0\0","txt"))strncpy(outPath,s.c_str(),MAX_PATH-1);
-            }
-            EndSectionTable();
-        }
-
-        SectionLabel("Progress");
-        ImGui::ProgressBar(prog.frac(),{-1,18});
-        ImGui::TextColored(Col::SUBTEXT,"%d / %d  %s",prog.done.load(),prog.total.load(),prog.lbl().c_str());
-        bool busy=running.load();
-        if(!busy){
-            if(RunButton("Start##as")) startAction();
-        } else {
-            ImGui::PushStyleColor(ImGuiCol_Button,Col::RED);
-            if(ImGui::Button("Stop",{120,32})) cancelAction();
-            ImGui::PopStyleColor();
-            ImGui::SameLine(); ImGui::TextColored(Col::YELLOW,"Scanning...");
-        }
-        SectionLabel("Results");
-        ImGui::TextColored(Col::SUBTEXT,"Hits: %d",(int)hits.size());
-        ImGui::Spacing();
-        if(ImGui::BeginTable("##ashits",3,ImGuiTableFlags_Borders|ImGuiTableFlags_ScrollY|ImGuiTableFlags_RowBg,{0,0})){
-            ImGui::TableSetupColumn("ID",    ImGuiTableColumnFlags_WidthFixed,60);
-            ImGui::TableSetupColumn("Title", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("URL",   ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableHeadersRow();
-            std::lock_guard<std::mutex>lk(hitMu);
-            for(auto& h:hits){
-                ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(0); ImGui::Text("%d",h.pid);
-                ImGui::TableSetColumnIndex(1); ImGui::TextUnformatted(h.title.c_str());
-                ImGui::TableSetColumnIndex(2); ImGui::TextUnformatted(h.url.c_str());
-            }
-            ImGui::EndTable();
-        }
         ImGui::EndChild();
     }
 };
