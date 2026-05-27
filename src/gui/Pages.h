@@ -2733,11 +2733,10 @@ struct PageCredits {
         ImGui::TextUnformatted("APB Config Tool");
         ImGui::PopStyleColor();
         ImGui::TextWrapped("An open-source localisation and configuration utility for All Points Bulletin: Reloaded.");
-        SectionLabel("Contributors");
-        ImGui::Text("Author");        ImGui::SameLine(120); ImGui::TextUnformatted("writch");
-        ImGui::Text("Credits");       ImGui::SameLine(120); ImGui::TextWrapped("Mewpri - original creator of the ItemTypes stat maker");
-        ImGui::Text("Resources");     ImGui::SameLine(120);
-        ImGui::TextUnformatted("myamai - Localization Resources");
+        SectionLabel("Credits");
+        ImGui::Text("Frosi");         ImGui::SameLine(120); ImGui::TextWrapped("helping with role images");
+        ImGui::Text("Mewpri");        ImGui::SameLine(120); ImGui::TextWrapped("original creator of the ItemTypes stat maker");
+        ImGui::Text("Myamai");        ImGui::SameLine(120); ImGui::TextWrapped("helping with localization guidance");
         ImGui::SameLine();
         if(ImGui::SmallButton("https://myamai.neocities.org/apb/localization##myamai")){
             ShellExecuteA(nullptr, "open", "https://myamai.neocities.org/apb/localization",

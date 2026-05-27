@@ -129,9 +129,11 @@ struct CreditsPage : IPage {
             ImGui::SameLine(160.f);
             ImGui::TextWrapped("%s", v);
         };
-        row("Author",       "writch");
+        row("Frosi",        "helping with role images");
         ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
-        row("Credits",      "Mewpri - original creator of the ItemTypes stat maker");
+        row("Mewpri",       "original creator of the ItemTypes stat maker");
+        ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
+        row("Myamai",       "helping with localization guidance");
         ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
         ImGui::TextColored(COL_SUBTEXT,
             "Not affiliated with Little Orbit or GamersFirst.\n"
