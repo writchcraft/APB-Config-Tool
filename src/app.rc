@@ -23,8 +23,8 @@ BEGIN
             VALUE "CompanyName", "writch\0"
             VALUE "FileDescription", "APB Config Tool\0"
             VALUE "FileVersion", "1.0.0.0\0"
-            VALUE "InternalName", "APBConfigHelper\0"
-            VALUE "OriginalFilename", "APBConfigHelper.exe\0"
+            VALUE "InternalName", "APBConfigTool\0"
+            VALUE "OriginalFilename", "APBConfigTool.exe\0"
             VALUE "ProductName", "APB Config Tool\0"
             VALUE "ProductVersion", "1.0.0.0\0"
         END

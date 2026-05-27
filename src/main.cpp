@@ -244,7 +244,7 @@ int WINAPI WinMain(HINSTANCE hi,HINSTANCE,LPSTR,int){
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
-    io.IniFilename = "apbtool.ini";
+    io.IniFilename = "apbconfigtool.ini";
     {
         static std::vector<unsigned char> uiFontData;
         ImFont* uiFont = nullptr;

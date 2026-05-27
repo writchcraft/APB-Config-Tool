@@ -1,8 +1,8 @@
 param(
     [string]$SourceRoot = (Split-Path -Parent $PSScriptRoot),
-    [string]$Destination = (Join-Path $env:TEMP 'APB-Localization-Helper'),
+    [string]$Destination = (Join-Path $env:TEMP 'APB-Config-Tool'),
     [switch]$Publish,
-    [string]$RemoteUrl = 'https://github.com/writchcraft/APB-Localization-Helper.git',
+    [string]$RemoteUrl = 'https://github.com/writchcraft/APB-Config-Tool.git',
     [string]$Branch = 'main',
     [string]$CommitMessage = 'Public release',
     [string]$AuthorName = 'writchcraft',
@@ -66,7 +66,7 @@ try {
                 '.idea'
                 '.vscode'
                 'cmake-build-release'
-                'APBConfigHelper.exe.lnk'
+                'APBConfigTool.exe.lnk'
                 'desktop.ini'
             )
             $filterCommand = "git rm -r --cached --ignore-unmatch -- " + ($filterPaths -join ' ')

@@ -1,4 +1,4 @@
-// Minimal JSON parser for APBConfigHelper - drop-in subset of nlohmann/json API
+// Minimal JSON parser for APBConfigTool - drop-in subset of nlohmann/json API
 // MIT-compatible, no dependencies, C++17
 #pragma once
 #include <string>

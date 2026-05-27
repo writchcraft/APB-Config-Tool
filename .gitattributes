@@ -3,5 +3,5 @@
 .vscode/ export-ignore
 CMakeLists.txt export-ignore
 cmake-build-release/ export-ignore
-APBConfigHelper.exe.lnk export-ignore
+APBConfigTool.exe.lnk export-ignore
 desktop.ini export-ignore
