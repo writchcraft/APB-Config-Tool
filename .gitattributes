@@ -1,0 +1,7 @@
+.gitignore export-ignore
+.idea/ export-ignore
+.vscode/ export-ignore
+CMakeLists.txt export-ignore
+cmake-build-release/ export-ignore
+APBConfigHelper.exe.lnk export-ignore
+desktop.ini export-ignore
