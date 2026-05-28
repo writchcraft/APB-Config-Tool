@@ -2280,8 +2280,20 @@ struct PageVehicleItemTypes {
 // ══════════════════════════════════════════════════════════════════════════
 struct PageHexConverter {
     char apbTag[4096] = "<Color:R={number} G={number} B={number}>";
+    char hexInput[32] = "#FF0000";
     float rgb[3] = {1.f, 0.f, 0.f};
     std::string output = "#FF0000";
+    bool colorValid = true;
+    bool syncHexInput = true;
+
+    static constexpr float PANEL_MAX_W   = 1080.f;
+    static constexpr float CARD_GAP      = 12.f;
+    static constexpr float CARD_FILL     = 0.034f;
+    static constexpr float CARD_FILL_2   = 0.028f;
+    static constexpr float CARD_BORDER   = 0.235f;
+    static constexpr float FIELD_GAP     = 8.f;
+    static constexpr float LABEL_W       = 64.f;
+    static constexpr float COPY_W        = 70.f;
 
     static int toByte(double value){
         if(value <= 1.0) value *= 255.0;
@@ -2330,68 +2342,356 @@ struct PageHexConverter {
         return true;
     }
 
+    static bool parseHex(const char* text, float out[3]){
+        if(!text) return false;
+        std::string s(text);
+        auto trim = [](std::string& str){
+            size_t start = 0;
+            while(start < str.size() && std::isspace((unsigned char)str[start])) ++start;
+            size_t end = str.size();
+            while(end > start && std::isspace((unsigned char)str[end - 1])) --end;
+            str = str.substr(start, end - start);
+        };
+        trim(s);
+        if(s.empty()) return false;
+        if(s[0] == '#') s.erase(0, 1);
+        else if(s.size() > 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) s.erase(0, 2);
+
+        if(s.size() == 3){
+            std::string expanded;
+            expanded.reserve(6);
+            for(char ch : s){
+                if(!std::isxdigit((unsigned char)ch)) return false;
+                expanded.push_back(ch);
+                expanded.push_back(ch);
+            }
+            s = expanded;
+        } else if(s.size() == 6){
+            for(char ch : s)
+                if(!std::isxdigit((unsigned char)ch)) return false;
+        } else {
+            return false;
+        }
+
+        unsigned long value = std::strtoul(s.c_str(), nullptr, 16);
+        out[0] = (float)((value >> 16) & 0xFF) / 255.f;
+        out[1] = (float)((value >> 8) & 0xFF) / 255.f;
+        out[2] = (float)(value & 0xFF) / 255.f;
+        return true;
+    }
+
     void updateTagFromRgb(){
         const std::string tag = fmtColourTag(rgb[0], rgb[1], rgb[2]);
         std::strncpy(apbTag, tag.c_str(), sizeof(apbTag) - 1);
         apbTag[sizeof(apbTag) - 1] = '\0';
     }
 
-    void draw(){
-        ImGui::BeginChild("##hexconv",{0,0},false);
-        SectionLabel("Hex Converter");
-        SectionNote("Enter RGB values directly or paste an APB colour tag to convert between tag and hex formats.");
+    static ImVec4 cardFill(int tier = 0){
+        return tier == 0 ? ImVec4(CARD_FILL, CARD_FILL, CARD_FILL, 1.f)
+                         : ImVec4(CARD_FILL_2, CARD_FILL_2, CARD_FILL_2, 1.f);
+    }
 
-        bool rgbEdited = false;
-        SectionLabel("RGB Input");
-        if(BeginSectionTable("##hexrgb", 80.f, 72.f)){
-            BeginSectionRow("Red");
-            ImGui::SetNextItemWidth(120.f);
-            rgbEdited |= ImGui::InputFloat("##hexr", &rgb[0], 0.f, 0.f, "%.6f");
+    static void beginCard(const char* id, ImVec2 size, int tier = 0){
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, cardFill(tier));
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(CARD_BORDER, CARD_BORDER, CARD_BORDER, 1.f));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(14.f, 12.f));
+        ImGui::BeginChild(id, size, true,
+            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    }
 
-            BeginSectionRow("Green");
-            ImGui::SetNextItemWidth(120.f);
-            rgbEdited |= ImGui::InputFloat("##hexg", &rgb[1], 0.f, 0.f, "%.6f");
+    static void endCard(){
+        ImGui::EndChild();
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(2);
+    }
 
-            BeginSectionRow("Blue");
-            ImGui::SetNextItemWidth(120.f);
-            rgbEdited |= ImGui::InputFloat("##hexb", &rgb[2], 0.f, 0.f, "%.6f");
-            EndSectionTable();
-        }
-        if(rgbEdited) updateTagFromRgb();
+    static bool copyButton(const char* id){
+        ImGui::PushStyleColor(ImGuiCol_Button,        ImVec4(0.22f, 0.22f, 0.22f, 1.f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.30f, 0.30f, 1.f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  ImVec4(0.34f, 0.34f, 0.34f, 1.f));
+        ImGui::PushStyleColor(ImGuiCol_Border,        Col::YELLOW_DIM);
+        ImGui::PushStyleColor(ImGuiCol_Text,          Col::YELLOW);
+        bool clicked = ImGui::Button(id, {COPY_W, 28.f});
+        ImGui::PopStyleColor(5);
+        return clicked;
+    }
 
-        SectionLabel("APB Tag");
-        SectionNote("<Color:R={number} G={number} B={number}>");
-        if(BeginSectionTable("##hextaggrid", 80.f, 72.f)){
-            BeginSectionRow("Tag");
-            ImGui::SetNextItemWidth(-FLT_MIN);
-            if(ImGui::InputText("##hextagpreview", apbTag, sizeof(apbTag))){
-                float parsed[3];
-                if(firstTag(apbTag, parsed)){
-                    rgb[0] = parsed[0];
-                    rgb[1] = parsed[1];
-                    rgb[2] = parsed[2];
-                    updateTagFromRgb();
-                }
+    static float wrappedTextHeight(const char* text, float wrapWidth){
+        return ImGui::CalcTextSize(text, nullptr, false, wrapWidth).y;
+    }
+
+    void applyPreset(float r, float g, float b){
+        rgb[0] = r;
+        rgb[1] = g;
+        rgb[2] = b;
+        colorValid = true;
+        syncHexInput = true;
+        updateTagFromRgb();
+    }
+
+    void drawHeaderCard(float w){
+        const char* description = "Convert RGB values, APB colour tags, and hex colours.";
+        const float textW = std::max(160.f, w - 28.f);
+        const float h = 14.f + ImGui::GetTextLineHeight() + 8.f + wrappedTextHeight(description, textW) + 14.f;
+
+        beginCard("##hexHeader", {w, h}, 0);
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::YELLOW);
+        ImGui::TextUnformatted("Hex Converter");
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::SUBTEXT);
+        ImGui::TextWrapped("%s", description);
+        ImGui::PopStyleColor();
+        endCard();
+    }
+
+    void drawRgbCard(float w){
+        const float h = 146.f;
+        beginCard("##hexRgbCard", {w, h}, 0);
+
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::YELLOW);
+        ImGui::TextUnformatted("RGB Input");
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+
+        if(ImGui::BeginTable("##hexRgbTable", 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings)){
+            ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_WidthFixed, LABEL_W);
+            ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+
+            auto row = [&](const char* label, const char* id, float* value){
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextUnformatted(label);
+                ImGui::TableSetColumnIndex(1);
+                ImGui::SetNextItemWidth(std::min(150.f, std::max(90.f, ImGui::GetContentRegionAvail().x)));
+                return ImGui::InputFloat(id, value, 0.f, 0.f, "%.6f");
+            };
+
+            bool rgbEdited = false;
+            rgbEdited |= row("Red",   "##hexr", &rgb[0]);
+            rgbEdited |= row("Green", "##hexg", &rgb[1]);
+            rgbEdited |= row("Blue",  "##hexb", &rgb[2]);
+            ImGui::EndTable();
+            if(rgbEdited){
+                colorValid = true;
+                syncHexInput = true;
+                updateTagFromRgb();
             }
-            NextSectionAction();
-            if(ImGui::Button("Copy##hextag"))
-                ImGui::SetClipboardText(apbTag);
-            EndSectionTable();
         }
+
+        endCard();
+    }
+
+    void drawPreviewCard(float w, const std::string& hexValue){
+        const float h = 196.f;
+        beginCard("##hexPreviewCard", {w, h}, 1);
+
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::YELLOW);
+        ImGui::TextUnformatted("Colour Preview");
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+
+        const float swatchW = ImGui::GetContentRegionAvail().x;
+        const float swatchH = 118.f;
+        ImVec2 swatchMin = ImGui::GetCursorScreenPos();
+        ImVec2 swatchMax = {swatchMin.x + swatchW, swatchMin.y + swatchH};
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const ImVec4 swatch = colorValid ? ImVec4(rgb[0], rgb[1], rgb[2], 1.f)
+                                         : ImVec4(0.08f, 0.08f, 0.08f, 1.f);
+        ImGui::PushStyleColor(ImGuiCol_Button,        swatch);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, swatch);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  swatch);
+        ImGui::PushStyleColor(ImGuiCol_Border,        ImVec4(CARD_BORDER, CARD_BORDER, CARD_BORDER, 1.f));
+        if(ImGui::Button("##hexPreviewSwatch", {swatchW, swatchH}))
+            ImGui::OpenPopup("##hexPreviewPicker");
+        ImGui::PopStyleColor(4);
+        dl->AddRect(swatchMin, swatchMax, IM_COL32(95, 95, 95, 255));
+
+        if(ImGui::BeginPopup("##hexPreviewPicker")){
+            ImGui::TextUnformatted("Colour Picker");
+            ImGui::Spacing();
+            float picker[3] = {
+                colorValid ? rgb[0] : 0.08f,
+                colorValid ? rgb[1] : 0.08f,
+                colorValid ? rgb[2] : 0.08f
+            };
+            if(ImGui::ColorPicker3("##hexPreviewPickerCol", picker,
+                ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_DisplayRGB | ImGuiColorEditFlags_InputRGB)){
+                rgb[0] = picker[0];
+                rgb[1] = picker[1];
+                rgb[2] = picker[2];
+                colorValid = true;
+                syncHexInput = true;
+                updateTagFromRgb();
+            }
+            ImGui::EndPopup();
+        }
+
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Text, colorValid ? Col::YELLOW : Col::SUBTEXT);
+        ImGui::TextUnformatted(hexValue.c_str());
+        ImGui::PopStyleColor();
+        if(!colorValid){
+            ImGui::PushStyleColor(ImGuiCol_Text, Col::RED);
+            ImGui::TextUnformatted("Invalid colour value");
+            ImGui::PopStyleColor();
+        }
+
+        endCard();
+    }
+
+    void drawTagCard(float w){
+        const bool inlineRow = (w - 28.f) >= COPY_W + FIELD_GAP + 220.f;
+        const float h = inlineRow ? 112.f : 144.f;
+        beginCard("##hexTagCard", {w, h}, 1);
+
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::YELLOW);
+        ImGui::TextUnformatted("APB Tag");
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::SUBTEXT);
+        ImGui::TextUnformatted("<Color:R={number} G={number} B={number}>");
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+
+        float rowAvail = ImGui::GetContentRegionAvail().x;
+        if(inlineRow){
+            float inputW = std::clamp(rowAvail - COPY_W - FIELD_GAP, 220.f, 620.f);
+            ImGui::SetNextItemWidth(inputW);
+        } else {
+            ImGui::SetNextItemWidth(std::max(0.f, rowAvail));
+        }
+        bool tagChanged = ImGui::InputText("##hextagpreview", apbTag, sizeof(apbTag));
+        if(inlineRow){
+            ImGui::SameLine();
+            if(copyButton("Copy##hextag"))
+                ImGui::SetClipboardText(apbTag);
+        } else {
+            ImGui::Spacing();
+            ImGui::SetCursorPosX(std::max(0.f, rowAvail - COPY_W));
+            if(copyButton("Copy##hextag"))
+                ImGui::SetClipboardText(apbTag);
+        }
+
+        if(tagChanged){
+            float parsed[3];
+            if(firstTag(apbTag, parsed)){
+                rgb[0] = parsed[0];
+                rgb[1] = parsed[1];
+                rgb[2] = parsed[2];
+                colorValid = true;
+                syncHexInput = true;
+                updateTagFromRgb();
+            } else {
+                colorValid = false;
+            }
+        }
+
+        endCard();
+    }
+
+    void drawHexCard(float w){
+        const bool inlineRow = (w - 28.f) >= COPY_W + FIELD_GAP + 140.f;
+        const float h = inlineRow ? 96.f : 128.f;
+        beginCard("##hexOutCard", {w, h}, 1);
+
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::YELLOW);
+        ImGui::TextUnformatted("Hex Output");
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+
+        if(syncHexInput){
+            std::snprintf(hexInput, sizeof(hexInput), "%s", output.c_str());
+            syncHexInput = false;
+        }
+        float rowAvail = ImGui::GetContentRegionAvail().x;
+        if(inlineRow){
+            float inputW = std::clamp(rowAvail - COPY_W - FIELD_GAP, 140.f, 220.f);
+            ImGui::SetNextItemWidth(inputW);
+        } else {
+            ImGui::SetNextItemWidth(std::max(0.f, rowAvail));
+        }
+        const bool hexChanged = ImGui::InputText("##hexout", hexInput, sizeof(hexInput));
+        if(hexChanged){
+            float parsed[3];
+            if(parseHex(hexInput, parsed)){
+                rgb[0] = parsed[0];
+                rgb[1] = parsed[1];
+                rgb[2] = parsed[2];
+                colorValid = true;
+                updateTagFromRgb();
+                output = toHex(rgb[0], rgb[1], rgb[2]);
+                std::snprintf(hexInput, sizeof(hexInput), "%s", output.c_str());
+            } else {
+                colorValid = false;
+            }
+        }
+        if(inlineRow){
+            ImGui::SameLine();
+            if(copyButton("Copy##hexconv"))
+                ImGui::SetClipboardText(output.c_str());
+        } else {
+            ImGui::Spacing();
+            ImGui::SetCursorPosX(std::max(0.f, rowAvail - COPY_W));
+            if(copyButton("Copy##hexconv"))
+                ImGui::SetClipboardText(output.c_str());
+        }
+
+        endCard();
+    }
+
+    void drawNotesCard(float w){
+        const char* note = "Values from 0-1 are treated as normalized RGB. Values above 1 are treated as 0-255 RGB.";
+        const float h = 84.f;
+        beginCard("##hexNotesCard", {w, h}, 1);
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::YELLOW);
+        ImGui::TextUnformatted("Notes");
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::SUBTEXT);
+        ImGui::TextWrapped("%s", note);
+        ImGui::PopStyleColor();
+        endCard();
+    }
+
+    void draw(){
+        float availW = ImGui::GetContentRegionAvail().x;
+        float panelW = std::min(PANEL_MAX_W, availW);
+        float offsetX = std::max(0.f, (availW - panelW) * 0.5f);
+        ImGui::SetCursorPosX(offsetX);
+
+        drawHeaderCard(panelW);
+        ImGui::Dummy({0.f, CARD_GAP});
+
+        const float rowW = panelW;
+        const bool twoCol = rowW >= 760.f;
+        const float cardW = twoCol ? (rowW - CARD_GAP) * 0.5f : rowW;
+
+        ImGui::SetCursorPosX(offsetX);
+        drawRgbCard(cardW);
+        const std::string previewHex = toHex(rgb[0], rgb[1], rgb[2]);
+        if(twoCol){
+            ImGui::SameLine(0.f, CARD_GAP);
+            drawPreviewCard(cardW, previewHex);
+        } else {
+            ImGui::Dummy({0.f, CARD_GAP});
+            ImGui::SetCursorPosX(offsetX);
+            drawPreviewCard(cardW, previewHex);
+        }
+
+        ImGui::Dummy({0.f, CARD_GAP});
+        ImGui::SetCursorPosX(offsetX);
+        drawTagCard(rowW);
 
         output = toHex(rgb[0], rgb[1], rgb[2]);
+        ImGui::Dummy({0.f, CARD_GAP});
+        ImGui::SetCursorPosX(offsetX);
+        drawHexCard(rowW);
 
-        SectionLabel("Hex Output");
-        if(BeginSectionTable("##hexoutgrid", 80.f, 72.f)){
-            BeginSectionRow("Hex");
-            ReadOnlyLogBox("##hexout", output, {-1.f, 52.f});
-            NextSectionAction();
-            if(ImGui::Button("Copy##hexconv"))
-                ImGui::SetClipboardText(output.c_str());
-            EndSectionTable();
-        }
-        ImGui::TextColored(Col::SUBTEXT, "Values from 0-1 are normalized RGB; values above 1 are treated as 0-255 RGB.");
-        ImGui::EndChild();
+        ImGui::Dummy({0.f, CARD_GAP});
+        ImGui::SetCursorPosX(offsetX);
+        drawNotesCard(rowW);
     }
 };
 
