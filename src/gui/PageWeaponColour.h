@@ -41,6 +41,11 @@ struct PageWeaponColour {
         std::string searchText;
     };
 
+    struct SpecificWeaponClipboardState {
+        bool valid = false;
+        ColourRuleState rule;
+    };
+
     char filePath[MAX_PATH] = {};
     char inventoryIntPath[MAX_PATH] = {};
     char shopGerPath[MAX_PATH] = {};
@@ -80,6 +85,7 @@ struct PageWeaponColour {
     std::vector<GunTypeDefinition> gunTypes;
     std::vector<CategoryState> categories;
     std::vector<SpecificWeaponState> specificWeapons;
+    SpecificWeaponClipboardState specificWeaponClipboard;
 
     static constexpr const char* MODES[] = {"SOLID","Stepped","Smooth","Triple Gradient"};
     static constexpr const char* SPECIFIC_SORTS[] = {"APB Class Order","Weapon Name"};
@@ -246,6 +252,39 @@ struct PageWeaponColour {
             }
             ImGui::EndCombo();
         }
+    }
+
+    void copySpecificWeaponState(const SpecificWeaponState& src){
+        specificWeaponClipboard.valid = true;
+        specificWeaponClipboard.rule.enabled = src.enabled;
+        specificWeaponClipboard.rule.fontIdx = src.fontIdx;
+        specificWeaponClipboard.rule.modeIdx = src.modeIdx;
+        copyColor(specificWeaponClipboard.rule.solid, src.solid);
+        for(int i = 0; i < 6; ++i)
+            copyColor(specificWeaponClipboard.rule.stepped[i], src.stepped[i]);
+        copyColor(specificWeaponClipboard.rule.smoothStart, src.smoothStart);
+        copyColor(specificWeaponClipboard.rule.smoothEnd, src.smoothEnd);
+        copyColor(specificWeaponClipboard.rule.tripleStart, src.tripleStart);
+        copyColor(specificWeaponClipboard.rule.tripleMid, src.tripleMid);
+        copyColor(specificWeaponClipboard.rule.tripleEnd, src.tripleEnd);
+    }
+
+    void pasteSpecificWeaponState(SpecificWeaponState& dst) const{
+        if(!specificWeaponClipboard.valid)
+            return;
+
+        const ColourRuleState& src = specificWeaponClipboard.rule;
+        dst.enabled = src.enabled;
+        dst.fontIdx = src.fontIdx;
+        dst.modeIdx = src.modeIdx;
+        copyColor(dst.solid, src.solid);
+        for(int i = 0; i < 6; ++i)
+            copyColor(dst.stepped[i], src.stepped[i]);
+        copyColor(dst.smoothStart, src.smoothStart);
+        copyColor(dst.smoothEnd, src.smoothEnd);
+        copyColor(dst.tripleStart, src.tripleStart);
+        copyColor(dst.tripleMid, src.tripleMid);
+        copyColor(dst.tripleEnd, src.tripleEnd);
     }
 
     void drawColourControls(const char* prefix, int idx, ColourRuleState& st){
@@ -569,7 +608,7 @@ struct PageWeaponColour {
             ImGui::TableSetupColumn("Category", ImGuiTableColumnFlags_WidthFixed, 210.f);
             ImGui::TableSetupColumn("Mode", ImGuiTableColumnFlags_WidthFixed, 160.f);
             ImGui::TableSetupColumn("Colours", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Font", ImGuiTableColumnFlags_WidthFixed, 210.f);
+            ImGui::TableSetupColumn("Font", ImGuiTableColumnFlags_WidthFixed, 300.f);
 
             for(int i = 0; i < (int)gunTypes.size(); ++i){
                 auto& st = categories[i];
@@ -866,7 +905,7 @@ struct PageWeaponColour {
             ImGui::TableSetupColumn("Weapon", ImGuiTableColumnFlags_WidthFixed, 340.f);
             ImGui::TableSetupColumn("Mode", ImGuiTableColumnFlags_WidthFixed, 150.f);
             ImGui::TableSetupColumn("Colours", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Font", ImGuiTableColumnFlags_WidthFixed, 210.f);
+            ImGui::TableSetupColumn("Font", ImGuiTableColumnFlags_WidthFixed, 300.f);
             ImGui::TableHeadersRow();
 
             for(int i = 0; i < (int)specificWeapons.size(); ++i){
@@ -894,6 +933,22 @@ struct PageWeaponColour {
 
                 ImGui::TableSetColumnIndex(4);
                 drawFontCombo("##font", st.fontIdx);
+                if(ImGui::SmallButton("Copy##specificWeaponCopy")){
+                    copySpecificWeaponState(st);
+                }
+                if(ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Copy this weapon override.");
+                ImGui::SameLine();
+                const bool canPasteSpecificWeapon = specificWeaponClipboard.valid;
+                if(!canPasteSpecificWeapon)
+                    ImGui::BeginDisabled();
+                if(ImGui::SmallButton("Paste##specificWeaponPaste")){
+                    pasteSpecificWeaponState(st);
+                }
+                if(ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Paste the last copied weapon override.");
+                if(!canPasteSpecificWeapon)
+                    ImGui::EndDisabled();
 
                 ImGui::PopID();
             }
@@ -967,7 +1022,7 @@ struct PageWeaponColour {
             ImGui::TableSetupColumn("Weapon", ImGuiTableColumnFlags_WidthFixed, 340.f);
             ImGui::TableSetupColumn("Mode", ImGuiTableColumnFlags_WidthFixed, 150.f);
             ImGui::TableSetupColumn("Colours", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Font", ImGuiTableColumnFlags_WidthFixed, 210.f);
+            ImGui::TableSetupColumn("Font", ImGuiTableColumnFlags_WidthFixed, 300.f);
             ImGui::TableHeadersRow();
 
             for(int i = 0; i < (int)specificWeapons.size(); ++i){
@@ -995,6 +1050,22 @@ struct PageWeaponColour {
 
                 ImGui::TableSetColumnIndex(4);
                 drawFontCombo("##font", st.fontIdx);
+                if(ImGui::SmallButton("Copy##specificWeaponCopyMerged")){
+                    copySpecificWeaponState(st);
+                }
+                if(ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Copy this weapon override.");
+                ImGui::SameLine();
+                const bool canPasteSpecificWeapon = specificWeaponClipboard.valid;
+                if(!canPasteSpecificWeapon)
+                    ImGui::BeginDisabled();
+                if(ImGui::SmallButton("Paste##specificWeaponPasteMerged")){
+                    pasteSpecificWeaponState(st);
+                }
+                if(ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Paste the last copied weapon override.");
+                if(!canPasteSpecificWeapon)
+                    ImGui::EndDisabled();
 
                 ImGui::PopID();
             }
