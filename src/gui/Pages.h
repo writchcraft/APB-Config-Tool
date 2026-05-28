@@ -16,6 +16,7 @@
 #include <fstream>
 #include <filesystem>
 #include <array>
+#include <cctype>
 #include <cmath>
 #include <iomanip>
 #include <map>
@@ -61,6 +62,24 @@ static ImU32 SamplePreviewTextGradient(const PreviewTextGradient& gradient, floa
 static int PreviewGridColumns(float availableW, float cardW, float colGap){
     const float fourUpW = (cardW * 4.f) + (colGap * 3.f);
     return availableW >= fourUpW ? 4 : 2;
+}
+
+static std::string ToLowerCopy(std::string text){
+    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char ch){
+        return (char)std::tolower(ch);
+    });
+    return text;
+}
+
+static bool ContainsTextCI(const std::string& haystack, const std::string& needleLower){
+    if(needleLower.empty()) return true;
+    return ToLowerCopy(haystack).find(needleLower) != std::string::npos;
+}
+
+static bool RgbEqual(const std::array<float,3>& a, const std::array<float,3>& b, float eps = 0.0005f){
+    return std::fabs(a[0] - b[0]) <= eps &&
+           std::fabs(a[1] - b[1]) <= eps &&
+           std::fabs(a[2] - b[2]) <= eps;
 }
 
 // Draw stat lines with left-to-right gradient across each key label
@@ -3057,6 +3076,9 @@ struct PagePremadeConfigs {
     int templateIdx = 0;
     char premadeConfigDir[MAX_PATH * 2] = {};
     bool premadeConfigDirSeeded = false;
+    char searchText[128] = {};
+    int showMode = 0;
+    int sortMode = 0;
     char outputDir[MAX_PATH] = {};
     std::atomic<bool> running{false};
     std::atomic<bool> cancelRequested{false};
@@ -3105,6 +3127,223 @@ struct PagePremadeConfigs {
         cancelRequested = true;
     }
 
+    void seedGradientOverrideState(const PremadeConfigEditableGradient& grad){
+        auto& ov = gradientOverrides[grad.sequence];
+        if(ov.seeded)
+            return;
+
+        ov.seeded = true;
+        ov.outputType = grad.type;
+        const size_t pipe = grad.sequence.find('|');
+        ov.origStartValue = (pipe != std::string::npos)
+            ? grad.sequence.substr(0, pipe) : grad.sequence;
+        const size_t lastPipe = grad.sequence.rfind('|');
+        ov.origEndValue = (lastPipe != std::string::npos)
+            ? grad.sequence.substr(lastPipe + 1) : grad.sequence;
+        ov.origMidValue = grad.midValue;
+
+        float tmp[3] = {0.5f, 0.5f, 0.5f};
+        parseRgbValue(ov.origStartValue, tmp);
+        ov.startRgb = {tmp[0], tmp[1], tmp[2]};
+        parseRgbValue(ov.origEndValue, tmp);
+        ov.endRgb = {tmp[0], tmp[1], tmp[2]};
+        if(!grad.midValue.empty()){
+            parseRgbValue(grad.midValue, tmp);
+            ov.midRgb = {tmp[0], tmp[1], tmp[2]};
+        }
+
+        std::istringstream ss(grad.sequence);
+        std::string step;
+        while(std::getline(ss, step, '|')){
+            if(step.empty()) continue;
+            bool found = false;
+            for(const auto& p : ov.origPalette){
+                if(p == step){ found = true; break; }
+            }
+            if(!found){
+                ov.origPalette.push_back(step);
+                parseRgbValue(step, tmp);
+                ov.paletteRgb.push_back({tmp[0], tmp[1], tmp[2]});
+            }
+        }
+    }
+
+    std::string currentValueText(const PremadeConfigEditableValue& value) const {
+        if(value.kind == "Named"){
+            auto it = namedOverrides.find(value.value);
+            return (it != namedOverrides.end()) ? it->second : value.value;
+        }
+
+        auto it = rgbOverrides.find(value.value);
+        if(it != rgbOverrides.end()){
+            const auto& rgb = it->second;
+            return "R=" + fmtF(rgb[0]) + " G=" + fmtF(rgb[1]) + " B=" + fmtF(rgb[2]);
+        }
+        return value.value;
+    }
+
+    bool valueIsEdited(const PremadeConfigEditableValue& value) const {
+        if(value.kind == "Named"){
+            auto it = namedOverrides.find(value.value);
+            const std::string current = (it != namedOverrides.end()) ? it->second : value.value;
+            return current != value.value;
+        }
+
+        std::array<float,3> current{};
+        auto it = rgbOverrides.find(value.value);
+        if(it != rgbOverrides.end())
+            current = it->second;
+        else
+            parseRgbValue(value.value, current.data());
+
+        std::array<float,3> original{};
+        parseRgbValue(value.value, original.data());
+        return !RgbEqual(current, original);
+    }
+
+    bool gradientIsEdited(const PremadeConfigEditableGradient& grad) {
+        seedGradientOverrideState(grad);
+        const auto& ov = gradientOverrides[grad.sequence];
+        if(ov.outputType != grad.type)
+            return true;
+
+        float tmp[3] = {0.5f, 0.5f, 0.5f};
+        if(ov.outputType == GradientType::Stepped){
+            if(ov.origPalette.size() != ov.paletteRgb.size())
+                return true;
+            for(size_t i = 0; i < ov.origPalette.size(); ++i){
+                parseRgbValue(ov.origPalette[i], tmp);
+                const std::array<float,3> original = {tmp[0], tmp[1], tmp[2]};
+                if(!RgbEqual(original, ov.paletteRgb[i]))
+                    return true;
+            }
+            return false;
+        }
+
+        parseRgbValue(ov.origStartValue, tmp);
+        if(!RgbEqual({tmp[0], tmp[1], tmp[2]}, ov.startRgb))
+            return true;
+        parseRgbValue(ov.origEndValue, tmp);
+        if(!RgbEqual({tmp[0], tmp[1], tmp[2]}, ov.endRgb))
+            return true;
+        if(ov.outputType == GradientType::Triple){
+            if(ov.origMidValue.empty())
+                return !RgbEqual({0.5f, 0.5f, 0.5f}, ov.midRgb);
+            parseRgbValue(ov.origMidValue, tmp);
+            if(!RgbEqual({tmp[0], tmp[1], tmp[2]}, ov.midRgb))
+                return true;
+        }
+        return false;
+    }
+
+    static bool matchesSearch(const std::string& needleLower, const PremadeConfigEditableValue& value, const std::string& currentText){
+        if(needleLower.empty()) return true;
+        if(ContainsTextCI(currentText, needleLower)) return true;
+        if(ContainsTextCI(value.value, needleLower)) return true;
+        if(ContainsTextCI(value.kind, needleLower)) return true;
+        if(ContainsTextCI(value.replacementHint, needleLower)) return true;
+        for(const auto& s : value.samples)
+            if(ContainsTextCI(s, needleLower)) return true;
+        return false;
+    }
+
+    static bool matchesSearch(const std::string& needleLower, const PremadeConfigEditableGradient& grad){
+        if(needleLower.empty()) return true;
+        if(ContainsTextCI(grad.kind, needleLower)) return true;
+        if(ContainsTextCI(grad.preview, needleLower)) return true;
+        if(ContainsTextCI(grad.sampleText, needleLower)) return true;
+        if(ContainsTextCI(grad.replacementHint, needleLower)) return true;
+        if(ContainsTextCI(grad.sequence, needleLower)) return true;
+        return false;
+    }
+
+    bool showValueRow(const PremadeConfigEditableValue& value) const {
+        switch(showMode){
+            case 1: return valueIsEdited(value);
+            case 2: return valueIsEdited(value);
+            case 0:
+            default: return true;
+        }
+    }
+
+    bool showGradientRow(const PremadeConfigEditableGradient& grad){
+        switch(showMode){
+            case 1: return gradientIsEdited(grad);
+            case 2:{
+                seedGradientOverrideState(grad);
+                const auto& ov = gradientOverrides[grad.sequence];
+                return ov.enabled;
+            }
+            case 0:
+            default:
+                return true;
+        }
+    }
+
+    static void drawStatBox(const char* label, const std::string& value){
+        ImGui::PushID(label);
+        ImGui::BeginChild("##statbox", {0.f, 56.f}, true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+        ImGui::TextColored(Col::SUBTEXT, "%s", label);
+        ImGui::TextUnformatted(value.c_str());
+        ImGui::EndChild();
+        ImGui::PopID();
+    }
+
+    static void drawPathTooltip(const char* path){
+        if(path && path[0] && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("%s", path);
+        if(ImGui::BeginPopupContextItem()){
+            if(ImGui::MenuItem("Copy path") && path && path[0])
+                ImGui::SetClipboardText(path);
+            ImGui::EndPopup();
+        }
+    }
+
+    static void drawGradientPreview(const GradientOverrideState& ov, float width, float height){
+        width = std::max(width, 1.f);
+        height = std::max(height, 1.f);
+        ImGui::Dummy({width, height});
+        ImVec2 min = ImGui::GetItemRectMin();
+        ImVec2 max = ImGui::GetItemRectMax();
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+
+        dl->AddRectFilled(min, max, ImGui::GetColorU32(Col::ITEM_BG), 4.f);
+        dl->AddRect(min, max, ImGui::GetColorU32(Col::BORDER), 4.f);
+
+        auto col4 = [](const std::array<float,3>& rgb){
+            return IM_COL32((int)std::clamp(rgb[0] * 255.f, 0.f, 255.f),
+                            (int)std::clamp(rgb[1] * 255.f, 0.f, 255.f),
+                            (int)std::clamp(rgb[2] * 255.f, 0.f, 255.f), 255);
+        };
+
+        const ImVec2 p0{min.x + 1.f, min.y + 1.f};
+        const ImVec2 p1{max.x - 1.f, max.y - 1.f};
+
+        if(ov.outputType == GradientType::Stepped && !ov.paletteRgb.empty()){
+            const float segW = (p1.x - p0.x) / (float)ov.paletteRgb.size();
+            for(size_t i = 0; i < ov.paletteRgb.size(); ++i){
+                const float x0 = p0.x + segW * (float)i;
+                const float x1 = (i + 1 == ov.paletteRgb.size()) ? p1.x : (x0 + segW);
+                dl->AddRectFilled({x0, p0.y}, {x1, p1.y}, col4(ov.paletteRgb[i]));
+            }
+        } else if(ov.outputType == GradientType::Triple){
+            const float midX = p0.x + (p1.x - p0.x) * 0.5f;
+            dl->AddRectFilledMultiColor(p0, {midX, p1.y}, col4(ov.startRgb), col4(ov.midRgb), col4(ov.midRgb), col4(ov.startRgb));
+            dl->AddRectFilledMultiColor({midX, p0.y}, p1, col4(ov.midRgb), col4(ov.endRgb), col4(ov.endRgb), col4(ov.midRgb));
+        } else {
+            dl->AddRectFilledMultiColor(p0, p1, col4(ov.startRgb), col4(ov.endRgb), col4(ov.endRgb), col4(ov.startRgb));
+        }
+    }
+
+    static void drawMetadataBadges(const PremadeConfigEditableGradient& grad){
+        std::string badges = "[" + std::to_string(grad.steps) + " steps]  ";
+        badges += "[" + std::to_string(grad.occurrences) + " hits]  ";
+        badges += "[" + std::to_string(grad.fileCount) + " files]";
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::SUBTEXT);
+        ImGui::TextWrapped("%s", badges.c_str());
+        ImGui::PopStyleColor();
+    }
+
     void seedDefaultOutput(){
         if(outputSeeded && outputDir[0] != '\0') return;
         const std::string preferred = DownloadsDir();
@@ -3116,13 +3355,6 @@ struct PagePremadeConfigs {
         setPremadeConfigLocation(premadeConfigDir);
         refreshPremadeConfigSummaries();
         std::snprintf(premadeConfigDir, sizeof(premadeConfigDir), "%s", premadeConfigLocation().c_str());
-    }
-
-    std::string resolvedOutputPreview() const {
-        if(!outputDir[0]) return {};
-        std::filesystem::path out(outputDir);
-        out /= "APBCT_YYYYMMDD_HHMMSS";
-        return out.string();
     }
 
     void startAction(){
@@ -3371,30 +3603,10 @@ struct PagePremadeConfigs {
         SectionLabel("Premade Configs");
         SectionNote("Default: Documents\\APBConfigTool\\PremadeConfigs. Each immediate subfolder is treated as one premade config.");
 
-        if(BeginSectionTable("##premadesource", 200.f, 86.f)){
-            BeginSectionRow("Premade Config Location:");
-            ImGui::SetNextItemWidth(-FLT_MIN);
-            if(ImGui::InputText("##premadeConfigLocation", premadeConfigDir, sizeof(premadeConfigDir),
-                ImGuiInputTextFlags_AutoSelectAll) && !ImGui::IsItemActive()){
-                applyPremadeConfigDir();
-            }
-            if(ImGui::IsItemDeactivatedAfterEdit())
-                applyPremadeConfigDir();
-            NextSectionAction();
-            if(ImGui::Button("Browse##premadeConfigLocation")){
-                std::string picked;
-                if(BrowseFolder(picked, "Select premade config folder")){
-                    std::snprintf(premadeConfigDir, sizeof(premadeConfigDir), "%s", picked.c_str());
-                    applyPremadeConfigDir();
-                }
-            }
-            EndSectionTable();
-        }
-
-        SectionLabel("Template");
-        if(BeginSectionTable("##premadetemplate", 124.f, 110.f)){
+        SectionLabel("Template Setup");
+        if(BeginSectionTable("##premadesetup", 176.f, 92.f)){
             BeginSectionRow("Config");
-            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::SetNextItemWidth(std::min(480.f, ImGui::GetContentRegionAvail().x));
             const char* preview = summaries.empty() ? "No scanned templates" : summaries[(size_t)templateIdx].name.c_str();
             if(ImGui::BeginCombo("##premadecombo", preview)){
                 for(int i = 0; i < (int)summaries.size(); ++i){
@@ -3406,295 +3618,361 @@ struct PagePremadeConfigs {
                 ImGui::EndCombo();
             }
 
-            BeginSectionRow("Summary");
-            if(isPremadeCacheBuilding()){
-                int done, total;
-                premadeCacheBuildProgress(done, total);
-                const float frac = (total > 0) ? (float)done / (float)total : 0.f;
-                char overlay[32];
-                if(total > 0)
-                    std::snprintf(overlay, sizeof(overlay), "%d / %d files", done, total);
-                else
-                    std::snprintf(overlay, sizeof(overlay), "Scanning...");
-                ImGui::ProgressBar(frac, {-1.f, 0.f}, overlay);
-            } else if(summaries.empty()){
-                ImGui::TextColored(Col::RED, "No premade configs found in the configured premade folder.");
-            } else {
-                const auto& summary = summaries[(size_t)templateIdx];
-                ImGui::Text("%d files", summary.fileCount);
-                ImGui::SameLine();
-                ImGui::TextColored(Col::SUBTEXT, "| %d tagged | %d named | %d RGB | %d gradients",
-                    summary.recolourableFiles, summary.namedColourTagCount,
-                    summary.rgbColourTagCount, summary.gradientRunCount);
+            BeginSectionRow("Premade Config Location");
+            ImGui::SetNextItemWidth(std::min(620.f, ImGui::GetContentRegionAvail().x));
+            if(ImGui::InputText("##premadeConfigLocation", premadeConfigDir, sizeof(premadeConfigDir),
+                ImGuiInputTextFlags_AutoSelectAll) && !ImGui::IsItemActive()){
+                applyPremadeConfigDir();
             }
+            if(ImGui::IsItemDeactivatedAfterEdit())
+                applyPremadeConfigDir();
+            drawPathTooltip(premadeConfigDir);
+            NextSectionAction();
+            if(BrowseButton("Browse##premadeConfigLocation")){
+                std::string picked;
+                if(BrowseFolder(picked, "Select premade config folder")){
+                    std::snprintf(premadeConfigDir, sizeof(premadeConfigDir), "%s", picked.c_str());
+                    applyPremadeConfigDir();
+                }
+            }
+            EndSectionTable();
+        }
+
+        SectionLabel("Summary");
+        if(isPremadeCacheBuilding()){
+            int done, total;
+            premadeCacheBuildProgress(done, total);
+            const float frac = (total > 0) ? (float)done / (float)total : 0.f;
+            char overlay[32];
+            if(total > 0)
+                std::snprintf(overlay, sizeof(overlay), "%d / %d files", done, total);
+            else
+                std::snprintf(overlay, sizeof(overlay), "Scanning...");
+            ImGui::ProgressBar(frac, {-1.f, 0.f}, overlay);
+        } else if(summaries.empty()){
+            ImGui::TextColored(Col::RED, "No premade configs found in the configured premade folder.");
+        } else {
+            const auto& summary = summaries[(size_t)templateIdx];
+            const std::array<std::pair<const char*, std::string>, 5> stats = {{
+                {"Files", std::to_string(summary.fileCount)},
+                {"Tagged Colours", std::to_string(summary.recolourableFiles)},
+                {"Named Colours", std::to_string(summary.namedColourTagCount)},
+                {"RGB Values", std::to_string(summary.rgbColourTagCount)},
+                {"Gradients", std::to_string(summary.gradientRunCount)}
+            }};
+            const float availW = ImGui::GetContentRegionAvail().x;
+            const int cols = (availW >= 900.f) ? 5 : (availW >= 620.f ? 3 : 2);
+            if(ImGui::BeginTable("##premadesummary", cols, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings)){
+                for(size_t i = 0; i < stats.size(); ++i){
+                    if((int)i % cols == 0)
+                        ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex((int)i % cols);
+                    drawStatBox(stats[i].first, stats[i].second);
+                }
+                ImGui::EndTable();
+            }
+        }
+
+        SectionLabel("Search and Filter");
+        if(BeginSectionTable("##premadefilters", 124.f, 96.f)){
+            BeginSectionRow("Search");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::InputTextWithHint("##premadesearch", "Search colours or gradients", searchText, sizeof(searchText));
+            NextSectionAction();
+            if(ImGui::Button("Clear##premadesearch")){
+                searchText[0] = '\0';
+            }
+
+            BeginSectionRow("Show");
+            static const char* kShowItems[] = { "All", "Edited Only", "Selected Only" };
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::Combo("##premadeshow", &showMode, kShowItems, IM_ARRAYSIZE(kShowItems));
+            NextSectionAction();
+            if(ImGui::Button("Reset##premadereset")){
+                searchText[0] = '\0';
+                showMode = 0;
+                sortMode = 0;
+            }
+
+            BeginSectionRow("Sort");
+            static const char* kSortItems[] = { "Most Used", "Name", "File Count", "Steps" };
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            ImGui::Combo("##premadesort", &sortMode, kSortItems, IM_ARRAYSIZE(kSortItems));
             EndSectionTable();
         }
 
         if(!summaries.empty()){
             const auto& summary = summaries[(size_t)templateIdx];
+            const std::string needleLower = ToLowerCopy(searchText);
 
-            if(!summary.editableValues.empty() || !summary.editableGradients.empty()){
-                SectionLabel("Colour Tags");
-
-                if(!summary.editableValues.empty()){
-                    const float rowH  = ImGui::GetFrameHeightWithSpacing();
-                    const int   shown = std::min((int)summary.editableValues.size(), 8);
-                    if(ImGui::BeginTable("##premadevals", 4,
-                        ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV |
-                        ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp,
-                        {0.f, shown * rowH + 6.f})){
-                        ImGui::TableSetupScrollFreeze(0, 1);
-                        ImGui::TableSetupColumn("##sw",  ImGuiTableColumnFlags_WidthFixed,  22.f);
-                        ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch, 2.f);
-                        ImGui::TableSetupColumn("Type",  ImGuiTableColumnFlags_WidthFixed,  56.f);
-                        ImGui::TableSetupColumn("Hits",  ImGuiTableColumnFlags_WidthFixed,  132.f);
-                        ImGui::TableHeadersRow();
-
-                        for(int vi = 0; vi < (int)summary.editableValues.size(); ++vi){
-                            const auto& value = summary.editableValues[(size_t)vi];
-                            ImGui::PushID(vi);
-                            ImGui::TableNextRow();
-
-                            ImGui::TableSetColumnIndex(0);
-                            if(value.kind == "Named"){
-                                auto it = namedOverrides.find(value.value);
-                                if(it == namedOverrides.end()){
-                                    namedOverrides.emplace(value.value, value.value);
-                                    it = namedOverrides.find(value.value);
-                                }
-                                std::string& chosen = it->second;
-                                if(ImGui::ColorButton("##ncolbtn", namedTagColor(chosen),
-                                        ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoBorder,
-                                        {18.f, 18.f}))
-                                    ImGui::OpenPopup("##ncolpopup");
-                                if(ImGui::BeginPopup("##ncolpopup")){
-                                    ImGui::TextColored(Col::SUBTEXT, "Pick a named colour");
-                                    ImGui::Separator();
-                                    for(const auto& row : PageLocalization::NAMED_TAG_ROWS){
-                                        ImVec4 rc{row.r, row.g, row.b, std::max(row.a, 0.15f)};
-                                        ImGui::ColorButton(("##ts_" + std::string(row.name)).c_str(),
-                                            rc, ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoBorder,
-                                            {14.f, 14.f});
-                                        ImGui::SameLine();
-                                        if(ImGui::Selectable(row.name, chosen == row.name))
-                                            chosen = row.name;
-                                    }
-                                    ImGui::EndPopup();
-                                }
-                            } else {
-                                auto it = rgbOverrides.find(value.value);
-                                if(it == rgbOverrides.end()){
-                                    std::array<float,3> rgb{};
-                                    parseRgbValue(value.value, rgb.data());
-                                    rgbOverrides.emplace(value.value, rgb);
-                                    it = rgbOverrides.find(value.value);
-                                }
-                                ImGui::ColorEdit3("##rgbpick", it->second.data(),
-                                    ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_NoInputs);
-                            }
-
-                            ImGui::TableSetColumnIndex(1);
-                            ImGui::AlignTextToFramePadding();
-                            if(value.kind == "Named"){
-                                auto it = namedOverrides.find(value.value);
-                                const std::string& chosen = (it != namedOverrides.end()) ? it->second : value.value;
-                                ImGui::TextUnformatted(chosen.c_str());
-                            } else {
-                                ImGui::TextUnformatted(value.value.c_str());
-                            }
-                            if(ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-                                drawColourTagTooltip(value);
-
-                            ImGui::TableSetColumnIndex(2);
-                            ImGui::AlignTextToFramePadding();
-                            ImGui::TextColored(Col::SUBTEXT, "%s", value.kind.c_str());
-
-                            ImGui::TableSetColumnIndex(3);
-                            ImGui::AlignTextToFramePadding();
-                            ImGui::TextColored(Col::SUBTEXT, "%d hits / %d files",
-                                value.occurrences, value.fileCount);
-
-                            ImGui::PopID();
-                        }
-                        ImGui::EndTable();
-                    }
-                    ImGui::Spacing();
-                }
-
-                if(!summary.editableGradients.empty()){
-                    SubLabel("Gradients");
-                    static const char* kTypeItems[] = { "Smooth", "Triple", "Stepped" };
-                    const float lineH  = ImGui::GetFrameHeightWithSpacing();
-                    const float cardH  = lineH * 2.f + 6.f;
-                    const int   shown  = std::min((int)summary.editableGradients.size(), 4);
-                    if(ImGui::BeginChild("##gradscroll", {0.f, shown * cardH + 4.f}, false)){
-                        for(int gi = 0; gi < (int)summary.editableGradients.size(); ++gi){
-                            const auto& grad = summary.editableGradients[(size_t)gi];
-                            ImGui::PushID(gi);
-
-                            // Seed override state
-                            auto& ov = gradientOverrides[grad.sequence];
-                            if(!ov.seeded){
-                                ov.seeded = true;
-                                ov.outputType = grad.type;
-                                const size_t pipe = grad.sequence.find('|');
-                                ov.origStartValue = (pipe != std::string::npos)
-                                    ? grad.sequence.substr(0, pipe) : grad.sequence;
-                                const size_t lastPipe = grad.sequence.rfind('|');
-                                ov.origEndValue = (lastPipe != std::string::npos)
-                                    ? grad.sequence.substr(lastPipe + 1) : grad.sequence;
-                                ov.origMidValue = grad.midValue;
-                                float tmp[3] = {0.5f,0.5f,0.5f};
-                                parseRgbValue(ov.origStartValue, tmp);
-                                ov.startRgb = {tmp[0],tmp[1],tmp[2]};
-                                parseRgbValue(ov.origEndValue, tmp);
-                                ov.endRgb   = {tmp[0],tmp[1],tmp[2]};
-                                if(!grad.midValue.empty()){
-                                    parseRgbValue(grad.midValue, tmp);
-                                    ov.midRgb = {tmp[0],tmp[1],tmp[2]};
-                                }
-                                // Build stepped palette in order of first appearance
-                                {
-                                    std::istringstream ss(grad.sequence);
-                                    std::string step;
-                                    while(std::getline(ss, step, '|')){
-                                        if(step.empty()) continue;
-                                        bool found = false;
-                                        for(const auto& p : ov.origPalette) if(p == step){ found = true; break; }
-                                        if(!found){
-                                            ov.origPalette.push_back(step);
-                                            parseRgbValue(step, tmp);
-                                            ov.paletteRgb.push_back({tmp[0],tmp[1],tmp[2]});
-                                        }
-                                    }
-                                }
-                            }
-
-                            // ── Row 1: detection info ─────────────────────────
-                            ImGui::Checkbox("##grov", &ov.enabled);
-                            if(ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
-                                ImGui::SetTooltip("Enable gradient override for export");
-                            ImGui::SameLine(0.f, 6.f);
-
-                            // Type badge (coloured)
-                            const ImVec4 typeCol =
-                                (grad.type == GradientType::Triple)  ? ImVec4{1.f,0.7f,0.2f,1.f} :
-                                (grad.type == GradientType::Stepped) ? ImVec4{0.6f,0.4f,1.f,1.f} :
-                                                                       ImVec4{0.3f,0.8f,1.f,1.f};
-                            const char* typeLabel =
-                                (grad.type == GradientType::Triple)  ? "Triple"  :
-                                (grad.type == GradientType::Stepped) ? "Stepped" : "Smooth";
-                            ImGui::TextColored(typeCol, "%s", typeLabel);
-                            ImGui::SameLine(0.f, 8.f);
-
-                            // Original colour swatches
-                            if(grad.type == GradientType::Stepped){
-                                // Show unique palette colours in order of first appearance
-                                std::vector<std::string> palette;
-                                {
-                                    std::istringstream ss(grad.sequence);
-                                    std::string step;
-                                    while(std::getline(ss, step, '|')){
-                                        if(step.empty()) continue;
-                                        bool found = false;
-                                        for(const auto& p : palette) if(p == step){ found = true; break; }
-                                        if(!found) palette.push_back(step);
-                                    }
-                                }
-                                for(int pi = 0; pi < (int)palette.size(); ++pi){
-                                    float pc[3] = {0.5f,0.5f,0.5f};
-                                    parseRgbValue(palette[(size_t)pi], pc);
-                                    if(pi > 0) ImGui::SameLine(0.f, 2.f);
-                                    char pid[16]; std::snprintf(pid, sizeof(pid), "##ogp%d", pi);
-                                    ImGui::ColorButton(pid, {pc[0],pc[1],pc[2],1.f},
-                                        ImGuiColorEditFlags_NoPicker|ImGuiColorEditFlags_NoTooltip|ImGuiColorEditFlags_NoBorder,{14.f,14.f});
-                                }
-                            } else {
-                                float cs[3]={0.5f,0.5f,0.5f}, ce[3]={0.5f,0.5f,0.5f};
-                                parseRgbValue(ov.origStartValue, cs);
-                                parseRgbValue(ov.origEndValue,   ce);
-                                ImGui::ColorButton("##ogs",{cs[0],cs[1],cs[2],1.f},
-                                    ImGuiColorEditFlags_NoPicker|ImGuiColorEditFlags_NoTooltip|ImGuiColorEditFlags_NoBorder,{14.f,14.f});
-                                if(grad.type == GradientType::Triple && !ov.origMidValue.empty()){
-                                    float cm[3]={0.5f,0.5f,0.5f};
-                                    parseRgbValue(ov.origMidValue, cm);
-                                    ImGui::SameLine(0.f,2.f);
-                                    ImGui::ColorButton("##ogm",{cm[0],cm[1],cm[2],1.f},
-                                        ImGuiColorEditFlags_NoPicker|ImGuiColorEditFlags_NoTooltip|ImGuiColorEditFlags_NoBorder,{14.f,14.f});
-                                }
-                                ImGui::SameLine(0.f,2.f);
-                                ImGui::TextUnformatted("\xe2\x86\x92");
-                                ImGui::SameLine(0.f,2.f);
-                                ImGui::ColorButton("##oge",{ce[0],ce[1],ce[2],1.f},
-                                    ImGuiColorEditFlags_NoPicker|ImGuiColorEditFlags_NoTooltip|ImGuiColorEditFlags_NoBorder,{14.f,14.f});
-                            }
-                            ImGui::SameLine(0.f, 8.f);
-
-                            // Sample text + stats pushed right
-                            const char* sampleLabel = grad.sampleText.empty()
-                                ? grad.preview.c_str() : grad.sampleText.c_str();
-                            ImGui::TextUnformatted(sampleLabel);
-                            ImGui::SameLine();
-                            const float statsX = ImGui::GetContentRegionMax().x - 90.f;
-                            if(ImGui::GetCursorPosX() < statsX) ImGui::SetCursorPosX(statsX);
-                            ImGui::TextColored(Col::SUBTEXT, "%d steps | %dx", grad.steps, grad.occurrences);
-
-                            // ── Row 2: replacement controls ───────────────────
-                            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 22.f); // align under checkbox
-                            if(!ov.enabled) ImGui::BeginDisabled();
-
-                            // Output type combo
-                            ImGui::SetNextItemWidth(112.f);
-                            int typeIdx = (int)ov.outputType;
-                            if(ImGui::Combo("##outtype", &typeIdx, kTypeItems, 3))
-                                ov.outputType = (GradientType)typeIdx;
-                            ImGui::SameLine(0.f, 6.f);
-
-                            if(ov.outputType == GradientType::Stepped){
-                                // One picker per palette colour
-                                for(int pi = 0; pi < (int)ov.paletteRgb.size(); ++pi){
-                                    char pid[16]; std::snprintf(pid, sizeof(pid), "##grp%d", pi);
-                                    ColorPickerButton(pid, ov.paletteRgb[(size_t)pi].data());
-                                    if(pi + 1 < (int)ov.paletteRgb.size()) ImGui::SameLine(0.f, 3.f);
-                                }
-                            } else {
-                                ImGui::TextColored(Col::SUBTEXT, "Start");
-                                ImGui::SameLine(0.f, 4.f);
-                                ColorPickerButton("##grs", ov.startRgb.data());
-                                if(ov.outputType == GradientType::Triple){
-                                    ImGui::SameLine(0.f, 6.f);
-                                    ImGui::TextColored(Col::SUBTEXT, "Mid");
-                                    ImGui::SameLine(0.f, 4.f);
-                                    ColorPickerButton("##grm", ov.midRgb.data());
-                                }
-                                ImGui::SameLine(0.f, 6.f);
-                                ImGui::TextColored(Col::SUBTEXT, "End");
-                                ImGui::SameLine(0.f, 4.f);
-                                ColorPickerButton("##gre", ov.endRgb.data());
-                            }
-
-                            if(!ov.enabled) ImGui::EndDisabled();
-
-                            ImGui::PopID();
-                            ImGui::Spacing();
-                            ImGui::Separator();
-                            ImGui::Spacing();
-                        }
-                    }
-                    ImGui::EndChild();
-                    ImGui::Spacing();
-                }
-
-            } else if(!isPremadeCacheBuilding()){
-                SectionNote("No APB colour tags or gradients were detected in this template.");
+            std::vector<int> visibleValues;
+            visibleValues.reserve(summary.editableValues.size());
+            for(int vi = 0; vi < (int)summary.editableValues.size(); ++vi){
+                const auto& value = summary.editableValues[(size_t)vi];
+                const std::string current = currentValueText(value);
+                if(!showValueRow(value))
+                    continue;
+                if(!matchesSearch(needleLower, value, current))
+                    continue;
+                visibleValues.push_back(vi);
             }
+            std::sort(visibleValues.begin(), visibleValues.end(), [&](int a, int b){
+                const auto& va = summary.editableValues[(size_t)a];
+                const auto& vb = summary.editableValues[(size_t)b];
+                const std::string ta = currentValueText(va);
+                const std::string tb = currentValueText(vb);
+                switch(sortMode){
+                    case 1:
+                        if(ta != tb) return ta < tb;
+                        if(va.kind != vb.kind) return va.kind < vb.kind;
+                        if(va.occurrences != vb.occurrences) return va.occurrences > vb.occurrences;
+                        if(va.fileCount != vb.fileCount) return va.fileCount > vb.fileCount;
+                        return a < b;
+                    case 2:
+                        if(va.fileCount != vb.fileCount) return va.fileCount > vb.fileCount;
+                        if(va.occurrences != vb.occurrences) return va.occurrences > vb.occurrences;
+                        if(ta != tb) return ta < tb;
+                        return a < b;
+                    case 3:
+                    default:
+                        if(va.occurrences != vb.occurrences) return va.occurrences > vb.occurrences;
+                        if(va.fileCount != vb.fileCount) return va.fileCount > vb.fileCount;
+                        if(ta != tb) return ta < tb;
+                        return a < b;
+                }
+            });
+
+            if(!summary.editableValues.empty()){
+                SectionLabel("Detected Colours");
+                if(visibleValues.empty()){
+                    SectionNote("No colours match the current filters.");
+                } else {
+                const float rowH = ImGui::GetFrameHeightWithSpacing();
+                const int shown = std::min((int)visibleValues.size(), 8);
+                if(ImGui::BeginTable("##premadevals", 5,
+                    ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_BordersOuter |
+                    ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp,
+                    {0.f, shown * rowH + 30.f})){
+                    ImGui::TableSetupScrollFreeze(0, 1);
+                    ImGui::TableSetupColumn("Colour", ImGuiTableColumnFlags_WidthFixed, 28.f);
+                    ImGui::TableSetupColumn("Name",   ImGuiTableColumnFlags_WidthStretch, 2.f);
+                    ImGui::TableSetupColumn("Type",   ImGuiTableColumnFlags_WidthFixed, 88.f);
+                    ImGui::TableSetupColumn("Hits",   ImGuiTableColumnFlags_WidthFixed, 84.f);
+                    ImGui::TableSetupColumn("Files",  ImGuiTableColumnFlags_WidthFixed, 84.f);
+                    ImGui::TableHeadersRow();
+
+                    for(int rowIndex : visibleValues){
+                        const auto& value = summary.editableValues[(size_t)rowIndex];
+                        ImGui::PushID(rowIndex);
+                        ImGui::TableNextRow();
+
+                        ImGui::TableSetColumnIndex(0);
+                        if(value.kind == "Named"){
+                            auto it = namedOverrides.find(value.value);
+                            if(it == namedOverrides.end()){
+                                namedOverrides.emplace(value.value, value.value);
+                                it = namedOverrides.find(value.value);
+                            }
+                            std::string& chosen = it->second;
+                            if(ImGui::ColorButton("##ncolbtn", namedTagColor(chosen),
+                                    ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoBorder,
+                                    {18.f, 18.f}))
+                                ImGui::OpenPopup("##ncolpopup");
+                            if(ImGui::BeginPopup("##ncolpopup")){
+                                ImGui::TextColored(Col::SUBTEXT, "Pick a named colour");
+                                ImGui::Separator();
+                                for(const auto& row : PageLocalization::NAMED_TAG_ROWS){
+                                    ImVec4 rc{row.r, row.g, row.b, std::max(row.a, 0.15f)};
+                                    ImGui::ColorButton(("##ts_" + std::string(row.name)).c_str(),
+                                        rc, ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoBorder,
+                                        {14.f, 14.f});
+                                    ImGui::SameLine();
+                                    if(ImGui::Selectable(row.name, chosen == row.name))
+                                        chosen = row.name;
+                                }
+                                ImGui::EndPopup();
+                            }
+                        } else {
+                            auto it = rgbOverrides.find(value.value);
+                            if(it == rgbOverrides.end()){
+                                std::array<float,3> rgb{};
+                                parseRgbValue(value.value, rgb.data());
+                                rgbOverrides.emplace(value.value, rgb);
+                                it = rgbOverrides.find(value.value);
+                            }
+                            ColorPickerButton("##rgbpick", it->second.data(), 18.f, 18.f);
+                        }
+
+                        ImGui::TableSetColumnIndex(1);
+                        const std::string current = currentValueText(value);
+                        if(value.kind == "Named"){
+                            ImGui::TextUnformatted(current.c_str());
+                        } else {
+                            ImGui::TextUnformatted(current.c_str());
+                        }
+                        if(ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                            drawColourTagTooltip(value);
+
+                        ImGui::TableSetColumnIndex(2);
+                        ImGui::TextColored(Col::SUBTEXT, "%s", value.kind.c_str());
+
+                        ImGui::TableSetColumnIndex(3);
+                        ImGui::TextColored(Col::SUBTEXT, "%d", value.occurrences);
+
+                        ImGui::TableSetColumnIndex(4);
+                        ImGui::TextColored(Col::SUBTEXT, "%d", value.fileCount);
+
+                        ImGui::PopID();
+                    }
+                    ImGui::EndTable();
+                }
+                }
+                ImGui::Spacing();
+            }
+
+            std::vector<int> visibleGradients;
+            visibleGradients.reserve(summary.editableGradients.size());
+            for(int gi = 0; gi < (int)summary.editableGradients.size(); ++gi){
+                const auto& grad = summary.editableGradients[(size_t)gi];
+                seedGradientOverrideState(grad);
+                if(!showGradientRow(grad))
+                    continue;
+                if(!matchesSearch(needleLower, grad))
+                    continue;
+                visibleGradients.push_back(gi);
+            }
+            std::sort(visibleGradients.begin(), visibleGradients.end(), [&](int a, int b){
+                const auto& ga = summary.editableGradients[(size_t)a];
+                const auto& gb = summary.editableGradients[(size_t)b];
+                const std::string ta = ga.sampleText.empty() ? ga.preview : ga.sampleText;
+                const std::string tb = gb.sampleText.empty() ? gb.preview : gb.sampleText;
+                switch(sortMode){
+                    case 1:
+                        if(ta != tb) return ta < tb;
+                        if(ga.kind != gb.kind) return ga.kind < gb.kind;
+                        if(ga.occurrences != gb.occurrences) return ga.occurrences > gb.occurrences;
+                        if(ga.fileCount != gb.fileCount) return ga.fileCount > gb.fileCount;
+                        return a < b;
+                    case 2:
+                        if(ga.fileCount != gb.fileCount) return ga.fileCount > gb.fileCount;
+                        if(ga.occurrences != gb.occurrences) return ga.occurrences > gb.occurrences;
+                        if(ga.steps != gb.steps) return ga.steps > gb.steps;
+                        return a < b;
+                    case 3:
+                        if(ga.steps != gb.steps) return ga.steps > gb.steps;
+                        if(ga.occurrences != gb.occurrences) return ga.occurrences > gb.occurrences;
+                        if(ga.fileCount != gb.fileCount) return ga.fileCount > gb.fileCount;
+                        return a < b;
+                    case 0:
+                    default:
+                        if(ga.occurrences != gb.occurrences) return ga.occurrences > gb.occurrences;
+                        if(ga.fileCount != gb.fileCount) return ga.fileCount > gb.fileCount;
+                        if(ga.steps != gb.steps) return ga.steps > gb.steps;
+                        return a < b;
+                }
+            });
+
+            if(!summary.editableGradients.empty()){
+                SectionLabel("Detected Gradients");
+                if(visibleGradients.empty()){
+                    SectionNote("No gradients match the current filters.");
+                } else {
+                static const char* kTypeItems[] = { "Smooth", "Triple", "Stepped" };
+                const float rowH = ImGui::GetTextLineHeightWithSpacing() * 6.f + 26.f;
+                const int shown = std::min((int)visibleGradients.size(), 4);
+                if(ImGui::BeginTable("##premadegradients", 3,
+                    ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_BordersOuter |
+                    ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp,
+                    {0.f, shown * rowH + 32.f})){
+                    ImGui::TableSetupScrollFreeze(0, 1);
+                    ImGui::TableSetupColumn("Apply",    ImGuiTableColumnFlags_WidthFixed, 34.f);
+                    ImGui::TableSetupColumn("Gradient", ImGuiTableColumnFlags_WidthStretch, 2.f);
+                    ImGui::TableSetupColumn("Metadata",  ImGuiTableColumnFlags_WidthFixed, 252.f);
+                    ImGui::TableHeadersRow();
+
+                    for(int rowIndex : visibleGradients){
+                        const auto& grad = summary.editableGradients[(size_t)rowIndex];
+                        seedGradientOverrideState(grad);
+                        auto& ov = gradientOverrides[grad.sequence];
+
+                        ImGui::PushID(rowIndex);
+                        ImGui::TableNextRow();
+
+                        ImGui::TableSetColumnIndex(0);
+                        ImGui::Checkbox("##grov", &ov.enabled);
+                        if(ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+                            ImGui::SetTooltip("Enable gradient override for export");
+
+                        ImGui::TableSetColumnIndex(1);
+                        const std::string title = grad.sampleText.empty() ? grad.preview : grad.sampleText;
+                        ImGui::TextWrapped("%s", title.c_str());
+                        if(!grad.kind.empty())
+                            ImGui::TextColored(Col::SUBTEXT, "%s", grad.kind.c_str());
+
+                        drawGradientPreview(ov, std::max(0.f, ImGui::GetContentRegionAvail().x), 10.f);
+                        ImGui::Spacing();
+
+                        if(!ov.enabled) ImGui::BeginDisabled();
+
+                        if(ov.outputType != GradientType::Stepped){
+                            ImGui::TextColored(Col::SUBTEXT, "Mode");
+                            ImGui::SameLine();
+                            ImGui::SetNextItemWidth(120.f);
+                            int typeIdx = (int)ov.outputType;
+                            if(ImGui::Combo("##outtype", &typeIdx, kTypeItems, IM_ARRAYSIZE(kTypeItems)))
+                                ov.outputType = (GradientType)typeIdx;
+                            ImGui::Spacing();
+                        }
+
+                        if(ov.outputType == GradientType::Stepped){
+                            ImGui::TextColored(Col::SUBTEXT, "Palette");
+                            ImGui::SameLine();
+                            for(int pi = 0; pi < (int)ov.paletteRgb.size(); ++pi){
+                                char pid[16];
+                                std::snprintf(pid, sizeof(pid), "##grp%d", pi);
+                                ColorPickerButton(pid, ov.paletteRgb[(size_t)pi].data(), 18.f, 18.f);
+                                if(pi + 1 < (int)ov.paletteRgb.size())
+                                    ImGui::SameLine(0.f, 4.f);
+                            }
+                        } else {
+                            ImGui::TextColored(Col::SUBTEXT, "Start");
+                            ImGui::SameLine(0.f, 4.f);
+                            ColorPickerButton("##grs", ov.startRgb.data(), 18.f, 18.f);
+                            if(ov.outputType == GradientType::Triple){
+                                ImGui::SameLine(0.f, 8.f);
+                                ImGui::TextColored(Col::SUBTEXT, "Mid");
+                                ImGui::SameLine(0.f, 4.f);
+                                ColorPickerButton("##grm", ov.midRgb.data(), 18.f, 18.f);
+                            }
+                            ImGui::SameLine(0.f, 8.f);
+                            ImGui::TextColored(Col::SUBTEXT, "End");
+                            ImGui::SameLine(0.f, 4.f);
+                            ColorPickerButton("##gre", ov.endRgb.data(), 18.f, 18.f);
+                        }
+
+                        if(!ov.enabled) ImGui::EndDisabled();
+
+                        ImGui::TableSetColumnIndex(2);
+                        drawMetadataBadges(grad);
+
+                        ImGui::PopID();
+                    }
+                    ImGui::EndTable();
+                }
+                }
+                ImGui::Spacing();
+            }
+
+        } else if(!isPremadeCacheBuilding()){
+            SectionNote("No APB colour tags or gradients were detected in this template.");
         }
 
-        SectionLabel("Output");
-        if(BeginSectionTable("##premadeoutput", 124.f, 110.f)){
-            BeginSectionRow("Folder");
-            ImGui::SetNextItemWidth(-FLT_MIN);
-            ImGui::InputText("##premadeoutdir", outputDir, sizeof(outputDir));
+        SectionLabel("Export Location");
+        if(BeginSectionTable("##premadeoutput", 160.f, 92.f)){
+            BeginSectionRow("Export Folder");
+            ImGui::SetNextItemWidth(std::min(620.f, ImGui::GetContentRegionAvail().x));
+            ImGui::InputText("##premadeoutdir", outputDir, sizeof(outputDir), ImGuiInputTextFlags_AutoSelectAll);
+            drawPathTooltip(outputDir);
             NextSectionAction();
             if(ImGui::Button("Browse##premadeout")){
                 std::string s;
@@ -3708,16 +3986,20 @@ struct PagePremadeConfigs {
                 std::snprintf(outputDir, sizeof(outputDir), "%s", downloadDir.c_str());
             }
             ImGui::SameLine();
-            if(ImGui::Button("Open##premadeoutopen") && outputDir[0])
+            if(ImGui::Button("Open Folder##premadeoutopen") && outputDir[0])
                 OpenInExplorer(outputDir);
             EndSectionTable();
         }
-        {
-            const std::string src = premadeConfigLocation();
-            const std::string exp = resolvedOutputPreview();
-            ImGui::TextColored(Col::SUBTEXT, "Source: %s  |  Export: %s",
-                src.empty() ? "(not set)" : src.c_str(),
-                exp.empty() ? "(no folder set)" : exp.c_str());
+
+        ImGui::Spacing();
+        bool busy = running.load();
+        if(busy) ImGui::BeginDisabled();
+        if(RunButton("Export Recoloured Config", 240.f))
+            startAction();
+        if(busy) ImGui::EndDisabled();
+        if(busy){
+            ImGui::SameLine();
+            ImGui::TextColored(Col::YELLOW, "Exporting...");
         }
 
         if(!lastOutputDir.empty()){
