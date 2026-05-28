@@ -3337,17 +3337,37 @@ struct PageSettings {
         }
     }
 
-    static void drawSteppedPreview(const std::vector<RGB>& stepped, float swatchW = 22.f, float swatchH = 18.f){
+    static void drawSteppedPreview(const std::vector<RGB>& stepped, float swatchW = 22.f, float swatchH = 18.f,
+        bool spreadAcrossWidth = false){
         if(stepped.empty()){
             ImGui::TextColored(Col::SUBTEXT, "No stepped colours.");
             return;
         }
 
-        const float gap = 6.f;
-        const float available = ImGui::GetContentRegionAvail().x;
-        const float total = (swatchW * (float)stepped.size()) + (gap * (float)(stepped.size() - 1));
-        if(total > available && !stepped.empty()){
-            swatchW = std::max(14.f, (available - gap * (float)(stepped.size() - 1)) / (float)stepped.size());
+        if(spreadAcrossWidth){
+            ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, {0.f, 0.f});
+            if(ImGui::BeginTable("##steppedPreview", (int)stepped.size(),
+                ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_NoSavedSettings))
+            {
+                for(int i = 0; i < (int)stepped.size(); ++i)
+                    ImGui::TableSetupColumn("##stepCol", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableNextRow();
+
+                for(int i = 0; i < (int)stepped.size(); ++i){
+                    ImGui::TableSetColumnIndex(i);
+                    const float cellW = ImGui::GetContentRegionAvail().x;
+                    const float x = ImGui::GetCursorPosX() + std::max(0.f, (cellW - swatchW) * 0.5f);
+                    ImGui::SetCursorPosX(x);
+                    ImGui::PushID(i);
+                    ImGui::ColorButton("##step", rgbToImVec4(stepped[(size_t)i]),
+                        ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoBorder,
+                        {swatchW, swatchH});
+                    ImGui::PopID();
+                }
+                ImGui::EndTable();
+            }
+            ImGui::PopStyleVar();
+            return;
         }
 
         for(size_t i = 0; i < stepped.size(); ++i){
@@ -3356,7 +3376,7 @@ struct PageSettings {
                 ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoBorder,
                 {swatchW, swatchH});
             if(i + 1 < stepped.size())
-                ImGui::SameLine(0.f, gap);
+                ImGui::SameLine(0.f, 6.f);
             ImGui::PopID();
         }
     }
@@ -3367,24 +3387,12 @@ struct PageSettings {
         const std::string tip = rgbTooltipText(rgb);
 
         ImGui::PushID(id);
-        ImGui::ColorButton("##swatch", rgbToImVec4(rgb),
-            ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoBorder,
-            {34.f, 22.f});
+        const bool changed = ColorPickerButton("##swatch", col, 34.f, 22.f);
         if(ImGui::IsItemHovered())
             ImGui::SetTooltip("%s", tip.c_str());
 
         ImGui::SameLine();
         ImGui::TextColored(Col::SUBTEXT, "%s", hex.c_str());
-        ImGui::SameLine();
-        if(ImGui::SmallButton("Pick"))
-            ImGui::OpenPopup("##picker");
-
-        bool changed = false;
-        if(ImGui::BeginPopup("##picker")){
-            changed = ImGui::ColorPicker3("##picker", col,
-                ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_PickerHueWheel);
-            ImGui::EndPopup();
-        }
         ImGui::PopID();
         return changed;
     }
@@ -3637,7 +3645,7 @@ struct PageSettings {
         drawGradientPreviewBar(themeStartRgb, themeEndRgb, themeBuildModeIdx == 1 ? &themeMidRgb : nullptr, themeBuildModeIdx == 1, 18.f);
         ImGui::Spacing();
         ImGui::TextColored(Col::SUBTEXT, "Stepped Palette");
-        drawSteppedPreview(steppedPreview, 22.f, 18.f);
+        drawSteppedPreview(steppedPreview, 22.f, 18.f, true);
 
         SectionLabel("Actions");
         if(ImGui::Button("Save New Theme", {132.f, 0.f}))
@@ -3690,7 +3698,7 @@ struct PageSettings {
                         themeTriple ? &theme.tripleMiddle : nullptr, themeTriple, 12.f);
 
                     ImGui::TableSetColumnIndex(2);
-                    drawSteppedPreview(theme.stepped, 18.f, 14.f);
+                    drawSteppedPreview(theme.stepped, 18.f, 14.f, false);
 
                     ImGui::TableSetColumnIndex(3);
                     if(ImGui::Button("Load")){
