@@ -3003,7 +3003,7 @@ struct PageSettings {
         const std::string defaultPremadeDir = PremadeConfigsDir();
         std::filesystem::create_directories(defaultPremadeDir);
 
-        ImGui::Text("Folder:");
+        ImGui::TextUnformatted("Premade Config Location:");
         ImGui::SetNextItemWidth(-220.f);
         if(ImGui::InputText("##premadeConfigLocation", premadeConfigDir, sizeof(premadeConfigDir),
             ImGuiInputTextFlags_AutoSelectAll) && !ImGui::IsItemActive()){
@@ -3055,6 +3055,8 @@ struct PageSettings {
 // ══════════════════════════════════════════════════════════════════════════
 struct PagePremadeConfigs {
     int templateIdx = 0;
+    char premadeConfigDir[MAX_PATH * 2] = {};
+    bool premadeConfigDirSeeded = false;
     char outputDir[MAX_PATH] = {};
     std::atomic<bool> running{false};
     std::atomic<bool> cancelRequested{false};
@@ -3091,6 +3093,13 @@ struct PagePremadeConfigs {
             && outputDir[0] != '\0';
     }
 
+    void syncPremadeConfigDir(){
+        if(premadeConfigDirSeeded)
+            return;
+        std::snprintf(premadeConfigDir, sizeof(premadeConfigDir), "%s", premadeConfigLocation().c_str());
+        premadeConfigDirSeeded = true;
+    }
+
     void cancelAction(){
         if(!running.load()) return;
         cancelRequested = true;
@@ -3098,9 +3107,15 @@ struct PagePremadeConfigs {
 
     void seedDefaultOutput(){
         if(outputSeeded && outputDir[0] != '\0') return;
-        const std::string preferred = DownloadsDir() + "\\APB Premade Localization";
+        const std::string preferred = DownloadsDir();
         std::snprintf(outputDir, sizeof(outputDir), "%s", preferred.c_str());
         outputSeeded = true;
+    }
+
+    void applyPremadeConfigDir(){
+        setPremadeConfigLocation(premadeConfigDir);
+        refreshPremadeConfigSummaries();
+        std::snprintf(premadeConfigDir, sizeof(premadeConfigDir), "%s", premadeConfigLocation().c_str());
     }
 
     std::string resolvedOutputPreview() const {
@@ -3336,6 +3351,7 @@ struct PagePremadeConfigs {
     }
 
     void draw(){
+        syncPremadeConfigDir();
         seedDefaultOutput();
 
         if(templateIdx != lastEditableTemplateIdx){
@@ -3353,7 +3369,27 @@ struct PagePremadeConfigs {
 
         ImGui::BeginChild("##premadeconfigs", {0, 0}, false);
         SectionLabel("Premade Configs");
-        SectionNote("Place a full-config folder in the configured premade folder, select it here, review its colour tags, then export with OK.");
+        SectionNote("Default: Documents\\APBConfigTool\\PremadeConfigs. Each immediate subfolder is treated as one premade config.");
+
+        if(BeginSectionTable("##premadesource", 200.f, 86.f)){
+            BeginSectionRow("Premade Config Location:");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if(ImGui::InputText("##premadeConfigLocation", premadeConfigDir, sizeof(premadeConfigDir),
+                ImGuiInputTextFlags_AutoSelectAll) && !ImGui::IsItemActive()){
+                applyPremadeConfigDir();
+            }
+            if(ImGui::IsItemDeactivatedAfterEdit())
+                applyPremadeConfigDir();
+            NextSectionAction();
+            if(ImGui::Button("Browse##premadeConfigLocation")){
+                std::string picked;
+                if(BrowseFolder(picked, "Select premade config folder")){
+                    std::snprintf(premadeConfigDir, sizeof(premadeConfigDir), "%s", picked.c_str());
+                    applyPremadeConfigDir();
+                }
+            }
+            EndSectionTable();
+        }
 
         SectionLabel("Template");
         if(BeginSectionTable("##premadetemplate", 124.f, 110.f)){
@@ -3410,8 +3446,8 @@ struct PagePremadeConfigs {
                         ImGui::TableSetupScrollFreeze(0, 1);
                         ImGui::TableSetupColumn("##sw",  ImGuiTableColumnFlags_WidthFixed,  22.f);
                         ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch, 2.f);
-                        ImGui::TableSetupColumn("Type",  ImGuiTableColumnFlags_WidthFixed,  48.f);
-                        ImGui::TableSetupColumn("Hits",  ImGuiTableColumnFlags_WidthFixed,  90.f);
+                        ImGui::TableSetupColumn("Type",  ImGuiTableColumnFlags_WidthFixed,  56.f);
+                        ImGui::TableSetupColumn("Hits",  ImGuiTableColumnFlags_WidthFixed,  132.f);
                         ImGui::TableHeadersRow();
 
                         for(int vi = 0; vi < (int)summary.editableValues.size(); ++vi){
@@ -3459,7 +3495,13 @@ struct PagePremadeConfigs {
 
                             ImGui::TableSetColumnIndex(1);
                             ImGui::AlignTextToFramePadding();
-                            ImGui::TextUnformatted(value.value.c_str());
+                            if(value.kind == "Named"){
+                                auto it = namedOverrides.find(value.value);
+                                const std::string& chosen = (it != namedOverrides.end()) ? it->second : value.value;
+                                ImGui::TextUnformatted(chosen.c_str());
+                            } else {
+                                ImGui::TextUnformatted(value.value.c_str());
+                            }
                             if(ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
                                 drawColourTagTooltip(value);
 
@@ -3602,7 +3644,7 @@ struct PagePremadeConfigs {
                             if(!ov.enabled) ImGui::BeginDisabled();
 
                             // Output type combo
-                            ImGui::SetNextItemWidth(76.f);
+                            ImGui::SetNextItemWidth(112.f);
                             int typeIdx = (int)ov.outputType;
                             if(ImGui::Combo("##outtype", &typeIdx, kTypeItems, 3))
                                 ov.outputType = (GradientType)typeIdx;
@@ -3662,7 +3704,7 @@ struct PagePremadeConfigs {
 
             BeginSectionRow("Helpers");
             if(ImGui::Button("Use Downloads##premadedl")){
-                const std::string downloadDir = DownloadsDir() + "\\APB Premade Localization";
+                const std::string downloadDir = DownloadsDir() + "\\APB_Config_Tool";
                 std::snprintf(outputDir, sizeof(outputDir), "%s", downloadDir.c_str());
             }
             ImGui::SameLine();
