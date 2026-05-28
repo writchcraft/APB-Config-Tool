@@ -5,3 +5,5 @@ cmake-build-*/
 CMakeFiles/
 CMakeCache.txt
 compile_commands.json
+desktop.ini
+apbconfigtool.ini
