@@ -2776,12 +2776,15 @@ struct PageSettings {
     char premadeConfigDir[MAX_PATH * 2] = {};
     bool premadeConfigDirSeeded = false;
     char themeName[128] = {};
-    int themeBuildModeIdx = 1; // 0=Smooth, 1=Triple
+    int themeBuildModeIdx = 1; // 0=Two Colour Gradient, 1=Three Colour Blend
     float themeStart[3] = {1.f,1.f,1.f};
     float themeMid[3]   = {1.f,1.f,1.f};
     float themeEnd[3]   = {1.f,1.f,1.f};
     std::string themeSaveStatus;
     bool themeSaveStatusOk = true;
+    int selectedThemeIdx = -1;
+    std::string activeThemeName;
+    std::string activeThemeStem;
 
     static std::string trimCopy(const std::string& value){
         size_t start = 0;
@@ -2839,6 +2842,172 @@ struct PageSettings {
         return {color[0], color[1], color[2]};
     }
 
+    static ImVec4 rgbToImVec4(const RGB& color){
+        return ImVec4(
+            (float)std::clamp(color.r, 0.0, 1.0),
+            (float)std::clamp(color.g, 0.0, 1.0),
+            (float)std::clamp(color.b, 0.0, 1.0),
+            1.f);
+    }
+
+    static ImU32 rgbToU32(const RGB& color){
+        return IM_COL32(
+            (int)std::clamp(color.r * 255.0, 0.0, 255.0),
+            (int)std::clamp(color.g * 255.0, 0.0, 255.0),
+            (int)std::clamp(color.b * 255.0, 0.0, 255.0),
+            255);
+    }
+
+    static std::string rgbHexText(const RGB& color){
+        char buf[16];
+        std::snprintf(buf, sizeof(buf), "#%02X%02X%02X",
+            (int)std::clamp(color.r * 255.0, 0.0, 255.0),
+            (int)std::clamp(color.g * 255.0, 0.0, 255.0),
+            (int)std::clamp(color.b * 255.0, 0.0, 255.0));
+        return buf;
+    }
+
+    static std::string rgbTooltipText(const RGB& color){
+        return "R=" + fmtF(color.r) + " G=" + fmtF(color.g) + " B=" + fmtF(color.b);
+    }
+
+    static bool looksTripleBlend(const GradientTheme& theme){
+        const RGB midpoint = lerpRGB(theme.smoothStart, theme.smoothEnd, 0.5);
+        return std::fabs(theme.tripleMiddle.r - midpoint.r) > 0.0005 ||
+               std::fabs(theme.tripleMiddle.g - midpoint.g) > 0.0005 ||
+               std::fabs(theme.tripleMiddle.b - midpoint.b) > 0.0005;
+    }
+
+    static void drawGradientPreviewBar(const RGB& start, const RGB& end, const RGB* mid, bool triple, float height = 18.f){
+        const float width = std::max(ImGui::GetContentRegionAvail().x, 1.f);
+        ImGui::Dummy({width, height});
+
+        const ImVec2 min = ImGui::GetItemRectMin();
+        const ImVec2 max = ImGui::GetItemRectMax();
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const ImVec2 innerMin{min.x + 1.f, min.y + 1.f};
+        const ImVec2 innerMax{max.x - 1.f, max.y - 1.f};
+
+        dl->AddRectFilled(min, max, ImGui::GetColorU32(Col::ITEM_BG), 4.f);
+        dl->AddRect(min, max, ImGui::GetColorU32(Col::BORDER), 4.f);
+
+        if(triple && mid){
+            const float midX = innerMin.x + (innerMax.x - innerMin.x) * 0.5f;
+            dl->AddRectFilledMultiColor(
+                innerMin, {midX, innerMax.y},
+                rgbToU32(start), rgbToU32(*mid), rgbToU32(*mid), rgbToU32(start));
+            dl->AddRectFilledMultiColor(
+                {midX, innerMin.y}, innerMax,
+                rgbToU32(*mid), rgbToU32(end), rgbToU32(end), rgbToU32(*mid));
+        } else {
+            dl->AddRectFilledMultiColor(
+                innerMin, innerMax,
+                rgbToU32(start), rgbToU32(end), rgbToU32(end), rgbToU32(start));
+        }
+    }
+
+    static void drawSteppedPreview(const std::vector<RGB>& stepped, float swatchW = 22.f, float swatchH = 18.f){
+        if(stepped.empty()){
+            ImGui::TextColored(Col::SUBTEXT, "No stepped colours.");
+            return;
+        }
+
+        const float gap = 6.f;
+        const float available = ImGui::GetContentRegionAvail().x;
+        const float total = (swatchW * (float)stepped.size()) + (gap * (float)(stepped.size() - 1));
+        if(total > available && !stepped.empty()){
+            swatchW = std::max(14.f, (available - gap * (float)(stepped.size() - 1)) / (float)stepped.size());
+        }
+
+        for(size_t i = 0; i < stepped.size(); ++i){
+            ImGui::PushID((int)i);
+            ImGui::ColorButton("##step", rgbToImVec4(stepped[i]),
+                ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoBorder,
+                {swatchW, swatchH});
+            if(i + 1 < stepped.size())
+                ImGui::SameLine(0.f, gap);
+            ImGui::PopID();
+        }
+    }
+
+    static bool drawEditableColourField(const char* id, float col[3]){
+        const RGB rgb = rgbFromFloats(col);
+        const std::string hex = rgbHexText(rgb);
+        const std::string tip = rgbTooltipText(rgb);
+
+        ImGui::PushID(id);
+        ImGui::ColorButton("##swatch", rgbToImVec4(rgb),
+            ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoBorder,
+            {34.f, 22.f});
+        if(ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", tip.c_str());
+
+        ImGui::SameLine();
+        ImGui::TextColored(Col::SUBTEXT, "%s", hex.c_str());
+        ImGui::SameLine();
+        if(ImGui::SmallButton("Pick"))
+            ImGui::OpenPopup("##picker");
+
+        bool changed = false;
+        if(ImGui::BeginPopup("##picker")){
+            changed = ImGui::ColorPicker3("##picker", col,
+                ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_PickerHueWheel);
+            ImGui::EndPopup();
+        }
+        ImGui::PopID();
+        return changed;
+    }
+
+    static void drawPathTooltip(const char* path){
+        if(path && path[0] && ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort))
+            ImGui::SetTooltip("%s", path);
+        if(ImGui::BeginPopupContextItem()){
+            if(ImGui::MenuItem("Copy path") && path && path[0])
+                ImGui::SetClipboardText(path);
+            ImGui::EndPopup();
+        }
+    }
+
+    void clearThemeSelection(){
+        selectedThemeIdx = -1;
+        activeThemeName.clear();
+        activeThemeStem.clear();
+    }
+
+    void refreshThemeSelectionFromName(const std::string& name){
+        activeThemeName = name;
+        selectedThemeIdx = -1;
+        auto& lib = ThemeLib();
+        for(int i = 0; i < lib.count(); ++i){
+            if(lib.themes[i].name == name){
+                selectedThemeIdx = i;
+                break;
+            }
+        }
+    }
+
+    void loadThemeIntoEditor(int idx){
+        auto& lib = ThemeLib();
+        if(idx < 0 || idx >= lib.count()) return;
+
+        const GradientTheme& theme = lib.themes[(size_t)idx];
+        std::snprintf(themeName, sizeof(themeName), "%s", theme.name.c_str());
+        themeBuildModeIdx = looksTripleBlend(theme) ? 1 : 0;
+        themeStart[0] = (float)theme.smoothStart.r;
+        themeStart[1] = (float)theme.smoothStart.g;
+        themeStart[2] = (float)theme.smoothStart.b;
+        themeMid[0] = (float)theme.tripleMiddle.r;
+        themeMid[1] = (float)theme.tripleMiddle.g;
+        themeMid[2] = (float)theme.tripleMiddle.b;
+        themeEnd[0] = (float)theme.smoothEnd.r;
+        themeEnd[1] = (float)theme.smoothEnd.g;
+        themeEnd[2] = (float)theme.smoothEnd.b;
+        selectedThemeIdx = idx;
+        activeThemeName = theme.name;
+        activeThemeStem = sanitizeFileStem(theme.name);
+        setThemeSaveStatus("Loaded theme \"" + theme.name + "\" into the editor.", true);
+    }
+
     std::vector<RGB> buildThemeStepped() const{
         std::vector<RGB> stepped;
         stepped.reserve(6);
@@ -2866,10 +3035,39 @@ struct PageSettings {
         themeSaveStatusOk = ok;
     }
 
-    bool saveTheme(){
+    bool writeThemeFile(const std::filesystem::path& path, const std::string& name,
+        const std::vector<RGB>& stepped, const RGB& smoothStart, const RGB& smoothEnd, const RGB& tripleMiddle)
+    {
+        std::ofstream out(path, std::ios::binary | std::ios::trunc);
+        if(!out) return false;
+
+        out << "{\n";
+        out << "    \"name\": \"" << escapeJson(name) << "\",\n";
+        out << "    \"stepped\": [\n";
+        for(size_t i = 0; i < stepped.size(); ++i){
+            out << "        ";
+            writeThemeColor(out, stepped[i]);
+            out << (i + 1 < stepped.size() ? ",\n" : "\n");
+        }
+        out << "    ],\n";
+        out << "    \"smooth_start\": ";
+        writeThemeColor(out, smoothStart);
+        out << ",\n";
+        out << "    \"smooth_end\": ";
+        writeThemeColor(out, smoothEnd);
+        out << ",\n";
+        out << "    \"triple_middle\": ";
+        writeThemeColor(out, tripleMiddle);
+        out << "\n";
+        out << "}\n";
+        out.close();
+        return (bool)out;
+    }
+
+    bool saveTheme(bool overwriteExisting){
         const std::string name = trimCopy(themeName);
         if(name.empty()){
-            setThemeSaveStatus("Theme name is required.", false);
+            setThemeSaveStatus("Theme name cannot be empty.", false);
             return false;
         }
         if(isReservedThemeName(name)){
@@ -2885,39 +3083,24 @@ struct PageSettings {
             : rgbFromFloats(themeMid);
 
         try{
-            std::filesystem::create_directories(ThemeLibrary::themesDir());
-            const std::filesystem::path path =
-                std::filesystem::path(ThemeLibrary::themesDir()) / (sanitizeFileStem(name) + ".json");
-
-            std::ofstream out(path, std::ios::binary | std::ios::trunc);
-            if(!out){
+            const std::filesystem::path dir = ThemeLibrary::themesDir();
+            std::filesystem::create_directories(dir);
+            const std::string stem = overwriteExisting && !activeThemeStem.empty()
+                ? activeThemeStem
+                : sanitizeFileStem(name);
+            const std::filesystem::path path = dir / (stem + ".json");
+            if(!overwriteExisting && std::filesystem::exists(path)){
+                setThemeSaveStatus("A theme with this name already exists.", false);
+                return false;
+            }
+            if(!writeThemeFile(path, name, stepped, smoothStart, smoothEnd, tripleMiddle)){
                 setThemeSaveStatus("Could not write theme file.", false);
                 return false;
             }
-
-            out << "{\n";
-            out << "    \"name\": \"" << escapeJson(name) << "\",\n";
-            out << "    \"stepped\": [\n";
-            for(size_t i = 0; i < stepped.size(); ++i){
-                out << "        ";
-                writeThemeColor(out, stepped[i]);
-                out << (i + 1 < stepped.size() ? ",\n" : "\n");
-            }
-            out << "    ],\n";
-            out << "    \"smooth_start\": ";
-            writeThemeColor(out, smoothStart);
-            out << ",\n";
-            out << "    \"smooth_end\": ";
-            writeThemeColor(out, smoothEnd);
-            out << ",\n";
-            out << "    \"triple_middle\": ";
-            writeThemeColor(out, tripleMiddle);
-            out << "\n";
-            out << "}\n";
-            out.close();
-
             ThemeLib().reload();
-            setThemeSaveStatus("Theme saved.", true);
+            activeThemeStem = stem;
+            refreshThemeSelectionFromName(name);
+            setThemeSaveStatus(overwriteExisting ? "Theme updated successfully." : "Theme saved successfully.", true);
             return true;
         } catch(const std::exception& e){
             setThemeSaveStatus(std::string("Theme save failed: ") + e.what(), false);
@@ -2937,130 +3120,212 @@ struct PageSettings {
         std::snprintf(premadeConfigDir, sizeof(premadeConfigDir), "%s", premadeConfigLocation().c_str());
     }
 
+    void reloadThemes(){
+        ThemeLib().reload();
+        if(!activeThemeName.empty())
+            refreshThemeSelectionFromName(activeThemeName);
+        else
+            clearThemeSelection();
+    }
+
     void draw(){
         syncPremadeConfigDir();
 
         ImGui::BeginChild("##settings",{0,0},false);
-        SectionLabel("Settings");
-        SectionNote("Shared application resources live here so the generator pages can stay focused on output configuration.");
+        SectionLabel("Theme Builder");
+        SectionNote("Create, preview, save, and manage colour palette presets used by the config tools.");
 
-        SectionLabel("Themes");
-        ImGui::TextWrapped("Theme presets are loaded from this folder. You can save a new theme here directly or edit the JSON files by hand.");
-        ImGui::Spacing();
-
+        SectionLabel("Theme Folder");
         const std::string themesDir = ThemeLibrary::themesDir();
         std::filesystem::create_directories(themesDir);
+        if(BeginSectionTable("##themeFolder", 132.f, 160.f)){
+            BeginSectionRow("Folder");
+            char themePathBuf[MAX_PATH * 2] = {};
+            std::snprintf(themePathBuf, sizeof(themePathBuf), "%s", themesDir.c_str());
+            ImGui::SetNextItemWidth(std::min(620.f, ImGui::GetContentRegionAvail().x));
+            ImGui::InputText("##themesFolderPath", themePathBuf, sizeof(themePathBuf), ImGuiInputTextFlags_ReadOnly);
+            drawPathTooltip(themePathBuf);
+            NextSectionAction();
+            if(ImGui::Button("Open Themes Folder", {140.f, 0.f})){
+                OpenInExplorer(themesDir);
+            }
+            EndSectionTable();
+        }
+        SectionNote("Theme presets are saved as JSON files in this folder.");
 
-        char themePathBuf[MAX_PATH * 2] = {};
-        std::snprintf(themePathBuf, sizeof(themePathBuf), "%s", themesDir.c_str());
-
-        ImGui::Text("Folder:");
-        ImGui::SetNextItemWidth(-150.f);
-        ImGui::InputText("##themesFolderPath", themePathBuf, sizeof(themePathBuf), ImGuiInputTextFlags_ReadOnly);
-        ImGui::SameLine();
-        if(ImGui::Button("Open Themes Folder", {140.f, 0.f}))
-            OpenInExplorer(themesDir);
-
-        ImGui::Spacing();
-        if(BeginSectionTable("##themeCreator", 124.f, 98.f)){
+        SectionLabel("Theme Info");
+        if(BeginSectionTable("##themeInfo", 148.f, 104.f)){
             BeginSectionRow("Theme Name");
-            ImGui::SetNextItemWidth(-FLT_MIN);
-            ImGui::InputText("##settingsThemeName", themeName, sizeof(themeName));
+            ImGui::SetNextItemWidth(std::min(420.f, ImGui::GetContentRegionAvail().x));
+            if(ImGui::InputText("##settingsThemeName", themeName, sizeof(themeName)))
+                activeThemeName = trimCopy(themeName);
 
-            BeginSectionRow("Build From");
-            ImGui::SetNextItemWidth(-FLT_MIN);
-            static const char* THEME_BUILD_MODES[] = {"Smooth", "Triple"};
+            BeginSectionRow("Palette Style / Build Method");
+            ImGui::SetNextItemWidth(std::min(320.f, ImGui::GetContentRegionAvail().x));
+            static const char* THEME_BUILD_MODES[] = {
+                "Two Colour Gradient",
+                "Three Colour Blend"
+            };
+            themeBuildModeIdx = std::clamp(themeBuildModeIdx, 0, 1);
             if(ImGui::BeginCombo("##settingsThemeMode", THEME_BUILD_MODES[themeBuildModeIdx])){
                 for(int i = 0; i < 2; ++i){
-                    if(ImGui::Selectable(THEME_BUILD_MODES[i], themeBuildModeIdx == i))
+                    const bool selected = themeBuildModeIdx == i;
+                    if(ImGui::Selectable(THEME_BUILD_MODES[i], selected))
                         themeBuildModeIdx = i;
-                    if(themeBuildModeIdx == i) ImGui::SetItemDefaultFocus();
+                    if(selected)
+                        ImGui::SetItemDefaultFocus();
                 }
                 ImGui::EndCombo();
-            }
-
-            BeginSectionRow(themeBuildModeIdx == 0 ? "Colours" : "Start / Mid / End");
-            if(themeBuildModeIdx == 0){
-                ColorPickerButton("##settingsThemeStart", themeStart);
-                ImGui::SameLine();
-                ImGui::TextUnformatted("Start");
-                ImGui::SameLine();
-                ColorPickerButton("##settingsThemeEnd", themeEnd);
-                ImGui::SameLine();
-                ImGui::TextUnformatted("End");
-            } else {
-                ColorPickerButton("##settingsThemeStart", themeStart);
-                ImGui::SameLine();
-                ImGui::TextUnformatted("Start");
-                ImGui::SameLine();
-                ColorPickerButton("##settingsThemeMid", themeMid);
-                ImGui::SameLine();
-                ImGui::TextUnformatted("Mid");
-                ImGui::SameLine();
-                ColorPickerButton("##settingsThemeEnd", themeEnd);
-                ImGui::SameLine();
-                ImGui::TextUnformatted("End");
-            }
-
-            BeginSectionRow("Actions");
-            if(ImGui::Button("Save Theme", {110.f, 0.f}))
-                saveTheme();
-            ImGui::SameLine();
-            if(ImGui::Button("Reload Themes", {110.f, 0.f})){
-                ThemeLib().reload();
-                setThemeSaveStatus("Themes reloaded.", true);
             }
             EndSectionTable();
         }
 
+        SectionLabel("Colours");
+        if(BeginSectionTable("##themeColours", 148.f, 88.f)){
+            BeginSectionRow("Start Colour");
+            drawEditableColourField("themeStart", themeStart);
+
+            if(themeBuildModeIdx == 1){
+                BeginSectionRow("Middle Colour");
+                drawEditableColourField("themeMid", themeMid);
+            }
+
+            BeginSectionRow("End Colour");
+            drawEditableColourField("themeEnd", themeEnd);
+            EndSectionTable();
+        }
+
+        const RGB themeStartRgb = rgbFromFloats(themeStart);
+        const RGB themeMidRgb = rgbFromFloats(themeMid);
+        const RGB themeEndRgb = rgbFromFloats(themeEnd);
+        const std::vector<RGB> steppedPreview = buildThemeStepped();
+
+        SectionLabel("Theme Preview");
+        SectionNote("The smooth bar previews smooth_start to smooth_end. The stepped strip previews the six colours that will be written to stepped.");
+        ImGui::TextColored(Col::SUBTEXT, "Smooth Gradient");
+        drawGradientPreviewBar(themeStartRgb, themeEndRgb, themeBuildModeIdx == 1 ? &themeMidRgb : nullptr, themeBuildModeIdx == 1, 18.f);
+        ImGui::Spacing();
+        ImGui::TextColored(Col::SUBTEXT, "Stepped Palette");
+        drawSteppedPreview(steppedPreview, 22.f, 18.f);
+
+        SectionLabel("Actions");
+        if(ImGui::Button("Save New Theme", {132.f, 0.f}))
+            saveTheme(false);
+        ImGui::SameLine();
+        if(ImGui::Button("Update Existing Theme", {160.f, 0.f}))
+            saveTheme(true);
+        ImGui::SameLine();
+        if(ImGui::Button("Reload Themes", {112.f, 0.f}))
+            reloadThemes();
+        ImGui::SameLine();
+        if(ImGui::Button("Open Themes Folder", {140.f, 0.f}))
+            OpenInExplorer(themesDir);
+
         ImGui::TextColored(themeSaveStatusOk ? Col::SUBTEXT : Col::RED, "%s",
             themeSaveStatus.empty() ? "Theme files are saved to Documents\\APBConfigTool\\Themes." : themeSaveStatus.c_str());
 
-        SectionLabel("Premade Configs");
+        SectionLabel("Saved Themes");
+        auto& themeLib = ThemeLib();
+        if(!themeLib.error.empty())
+            ImGui::TextColored(Col::RED, "%s", themeLib.error.c_str());
+        if(themeLib.count() == 0){
+            SectionNote("No saved themes were found in the themes folder.");
+        } else {
+            if(ImGui::BeginTable("##savedthemes", 4,
+                ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_BordersOuter |
+                ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings))
+            {
+                ImGui::TableSetupColumn("Theme", ImGuiTableColumnFlags_WidthFixed, 180.f);
+                ImGui::TableSetupColumn("Smooth Preview", ImGuiTableColumnFlags_WidthStretch, 1.3f);
+                ImGui::TableSetupColumn("Stepped Preview", ImGuiTableColumnFlags_WidthStretch, 1.7f);
+                ImGui::TableSetupColumn("Action", ImGuiTableColumnFlags_WidthFixed, 76.f);
+                ImGui::TableHeadersRow();
+
+                for(int i = 0; i < themeLib.count(); ++i){
+                    const GradientTheme& theme = themeLib.themes[(size_t)i];
+                    ImGui::PushID(i);
+                    ImGui::TableNextRow(ImGuiTableRowFlags_None, 38.f);
+
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::TextUnformatted(theme.name.c_str());
+                    if(selectedThemeIdx == i){
+                        ImGui::SameLine();
+                        ImGui::TextColored(Col::YELLOW, "(loaded)");
+                    }
+
+                    ImGui::TableSetColumnIndex(1);
+                    const bool themeTriple = looksTripleBlend(theme);
+                    drawGradientPreviewBar(theme.smoothStart, theme.smoothEnd,
+                        themeTriple ? &theme.tripleMiddle : nullptr, themeTriple, 12.f);
+
+                    ImGui::TableSetColumnIndex(2);
+                    drawSteppedPreview(theme.stepped, 18.f, 14.f);
+
+                    ImGui::TableSetColumnIndex(3);
+                    if(ImGui::Button("Load")){
+                        loadThemeIntoEditor(i);
+                    }
+                    ImGui::PopID();
+                }
+                ImGui::EndTable();
+            }
+        }
+
+        SectionLabel("Premade Config Folder");
         SectionNote("Templates are scanned from this folder at runtime. Each immediate subfolder is treated as one premade config.");
 
         const std::string defaultPremadeDir = PremadeConfigsDir();
         std::filesystem::create_directories(defaultPremadeDir);
 
-        ImGui::TextUnformatted("Premade Config Location:");
-        ImGui::SetNextItemWidth(-220.f);
-        if(ImGui::InputText("##premadeConfigLocation", premadeConfigDir, sizeof(premadeConfigDir),
-            ImGuiInputTextFlags_AutoSelectAll) && !ImGui::IsItemActive()){
-            applyPremadeConfigDir();
-        }
-        if(ImGui::IsItemDeactivatedAfterEdit())
-            applyPremadeConfigDir();
-        ImGui::SameLine();
-        if(ImGui::Button("Browse##premadeConfigLocation", {70.f, 0.f})){
-            std::string picked;
-            if(BrowseFolder(picked, "Select premade config folder")){
-                std::snprintf(premadeConfigDir, sizeof(premadeConfigDir), "%s", picked.c_str());
+        if(BeginSectionTable("##premadeConfig", 176.f, 136.f)){
+            BeginSectionRow("Premade Config Location");
+            ImGui::SetNextItemWidth(std::min(620.f, ImGui::GetContentRegionAvail().x));
+            if(ImGui::InputText("##premadeConfigLocation", premadeConfigDir, sizeof(premadeConfigDir),
+                ImGuiInputTextFlags_AutoSelectAll) && !ImGui::IsItemActive()){
                 applyPremadeConfigDir();
             }
-        }
-        ImGui::SameLine();
-        if(ImGui::Button("Open##premadeConfigLocation", {60.f, 0.f}))
-            OpenInExplorer(premadeConfigLocation());
+            if(ImGui::IsItemDeactivatedAfterEdit())
+                applyPremadeConfigDir();
+            drawPathTooltip(premadeConfigDir);
+            NextSectionAction();
+            if(BrowseButton("Browse##premadeConfigLocation")){
+                std::string picked;
+                if(BrowseFolder(picked, "Select premade config folder")){
+                    std::snprintf(premadeConfigDir, sizeof(premadeConfigDir), "%s", picked.c_str());
+                    applyPremadeConfigDir();
+                }
+            }
+            ImGui::SameLine();
+            if(ImGui::Button("Open", {56.f, 0.f})){
+                OpenInExplorer(premadeConfigLocation());
+            }
 
-        ImGui::Spacing();
-        if(ImGui::Button("Use Default Premade Folder", {180.f, 0.f})){
-            std::snprintf(premadeConfigDir, sizeof(premadeConfigDir), "%s", defaultPremadeDir.c_str());
-            applyPremadeConfigDir();
+            BeginSectionRow("Actions");
+            if(ImGui::Button("Use Default Premade Folder")){
+                std::snprintf(premadeConfigDir, sizeof(premadeConfigDir), "%s", defaultPremadeDir.c_str());
+                applyPremadeConfigDir();
+            }
+            ImGui::SameLine();
+            if(ImGui::Button("Refresh Premade Scan")){
+                applyPremadeConfigDir();
+            }
+            EndSectionTable();
         }
-        ImGui::SameLine();
-        if(ImGui::Button("Refresh Premade Scan", {150.f, 0.f}))
-            applyPremadeConfigDir();
 
         const auto summaries = premadeConfigSummaries();
         int totalFiles = 0;
         for(const auto& summary : summaries)
             totalFiles += summary.fileCount;
-        ImGui::TextColored(Col::SUBTEXT, "Resolved folder: %s", premadeConfigLocation().c_str());
         if(isPremadeCacheBuilding()){
             int done, total;
             premadeCacheBuildProgress(done, total);
             const float frac = (total > 0) ? (float)done / (float)total : 0.f;
-            ImGui::ProgressBar(frac, {-1.f, 0.f}, "Scanning...");
+            char overlay[32];
+            if(total > 0)
+                std::snprintf(overlay, sizeof(overlay), "%d / %d files", done, total);
+            else
+                std::snprintf(overlay, sizeof(overlay), "Scanning...");
+            ImGui::ProgressBar(frac, {-1.f, 0.f}, overlay);
         } else {
             ImGui::TextColored(Col::SUBTEXT, "Detected %d templates across %d files.", (int)summaries.size(), totalFiles);
         }
