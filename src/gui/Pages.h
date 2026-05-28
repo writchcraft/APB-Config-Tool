@@ -16,7 +16,9 @@
 #include <fstream>
 #include <filesystem>
 #include <array>
+#include <cassert>
 #include <cctype>
+#include <cstring>
 #include <cmath>
 #include <iomanip>
 #include <map>
@@ -2809,7 +2811,11 @@ Notes:
         {"Blue_TaskMarker", false, true, nullptr, 0.470588f, 1.f, 1.f, 1.f, "rgba(120,255,255,1)", "R=0.470588 G=1 B=1"},
         {"Blue_mid", false, true, nullptr, 0.196078f, 0.415686f, 1.f, 1.f, "rgba(50,106,255,1)", "R=0.196078 G=0.415686 B=1"},
         {"Bronze", false, true, nullptr, 0.694118f, 0.501961f, 0.101961f, 1.f, "rgba(177,128,26,1)", "R=0.694118 G=0.501961 B=0.101961"},
+        {"Cash_Green", true, true, nullptr, 0.f, 1.f, 0.f, 1.f, "rgba(0,255,0,1)", ""},
+        {"Cash_Red", true, true, nullptr, 1.f, 0.f, 0.f, 1.f, "rgba(255,0,0,1)", ""},
         {"Ceremony_Highlight", false, true, nullptr, 1.f, 0.882353f, 0.588235f, 1.f, "rgba(255,225,150,1)", "R=1 G=0.882353 B=0.588235"},
+        {"Chat_AutoReply", false, true, nullptr, 0.682353f, 0.682353f, 0.682353f, 1.f, "rgba(174,174,174,1)", "R=0.682353 G=0.682353 B=0.682353"},
+        {"Chat_Broadcast", false, true, nullptr, 0.682353f, 0.682353f, 0.682353f, 1.f, "rgba(174,174,174,1)", "R=0.682353 G=0.682353 B=0.682353"},
         {"Chat_Clan", false, true, nullptr, 0.078431f, 0.274510f, 1.f, 1.f, "rgba(20,70,255,1)", "R=0.078431 G=0.274510 B=1"},
         {"Chat_Combat", false, true, nullptr, 1.f, 0.192157f, 0.019608f, 1.f, "rgba(255,49,5,1)", "R=1 G=0.192157 B=0.019608"},
         {"Chat_Dev", false, true, nullptr, 0.f, 1.f, 1.f, 1.f, "rgba(0,255,255,1)", "R=0 G=1 B=1"},
@@ -2838,18 +2844,35 @@ Notes:
         {"ED_symbol", false, true, nullptr, 0.f, 0.862745f, 0.831373f, 1.f, "rgba(0,220,212,1)", "R=0 G=0.862745 B=0.831373"},
         {"ED_wardrobe", false, true, nullptr, 0.650980f, 0.f, 0.650980f, 1.f, "rgba(166,0,166,1)", "R=0.650980 G=0 B=0.650980"},
         {"Green", false, true, nullptr, 0.078431f, 1.f, 0.f, 1.f, "rgba(20,255,0,1)", "R=0.078431 G=1 B=0"},
+        {"Green_Blue_Pale", false, true, nullptr, 0.494118f, 0.898039f, 0.784314f, 1.f, "rgba(126,229,200,1)", "R=0.494118 G=0.898039 B=0.784314"},
         {"Green_Dark", false, true, nullptr, 0.098039f, 0.549020f, 0.196078f, 1.f, "rgba(25,140,50,1)", "R=0.098039 G=0.549020 B=0.196078"},
         {"Green_Light", false, true, nullptr, 0.011765f, 1.f, 0.541176f, 1.f, "rgba(3,255,138,1)", "R=0.011765 G=1 B=0.541176"},
         {"Green_Pale", false, true, nullptr, 0.400000f, 1.f, 0.f, 1.f, "rgba(102,255,0,1)", "R=0.400000 G=1 B=0"},
         {"Green_TaskMarker", false, true, nullptr, 0.270588f, 1.f, 0.086275f, 1.f, "rgba(69,255,22,1)", "R=0.270588 G=1 B=0.086275"},
+        {"Green_VeryDark", false, true, nullptr, 0.f, 0.215686f, 0.f, 1.f, "rgba(0,55,0,1)", "R=0 G=0.215686 B=0"},
         {"Grey", false, true, nullptr, 0.349020f, 0.349020f, 0.349020f, 1.f, "rgba(89,89,89,1)", "R=0.349020 G=0.349020 B=0.349020"},
         {"Grey_Dark", false, true, nullptr, 0.035294f, 0.035294f, 0.035294f, 1.f, "rgba(9,9,9,1)", "R=0.035294 G=0.035294 B=0.035294"},
         {"Grey_Pale", false, true, nullptr, 0.882353f, 0.882353f, 0.882353f, 1.f, "rgba(225,225,225,1)", "R=0.882353 G=0.882353 B=0.882353"},
+        {"Grey_Transparent", false, true, nullptr, 0.349020f, 0.349020f, 0.349020f, 0.607843f, "rgba(89,89,89,0.607843)", "R=0.349020 G=0.349020 B=0.349020"},
+        {"GroupHUDHeader_Chaos", true, true, nullptr, 0.603922f, 0.054902f, 0.098039f, 1.f, "#9A0E19", ""},
+        {"GroupHUDHeader_Minigame", true, true, nullptr, 0.058824f, 0.415686f, 0.101961f, 1.f, "#0F6A1A", ""},
+        {"GroupHUDHeader_NotReady", true, true, nullptr, 0.180392f, 0.400000f, 0.498039f, 1.f, "#2E667F", ""},
+        {"GroupHUDHeader_OnMission", true, true, nullptr, 0.756863f, 0.447059f, 0.109804f, 1.f, "#C1721C", ""},
+        {"GroupHUDHeader_Ready", true, true, nullptr, 0.450980f, 0.780392f, 0.611765f, 1.f, "#73C79C", ""},
+        {"GroupHUDHeader_Waiting", true, true, nullptr, 0.f, 0.f, 0.f, 1.f, "rgba(0,0,0,1)", "R=0 G=0 B=0"},
         {"HUDMessage_Default", true, true, nullptr, 0.984314f, 0.682353f, 0.129412f, 1.f, "#FBAE21", ""},
         {"HUDMessage_Error", false, true, nullptr, 0.776471f, 0.f, 0.f, 1.f, "rgba(198,0,0,1)", "R=0.776471 G=0 B=0"},
         {"HUDMessage_Mission", false, true, nullptr, 0.705882f, 0.627451f, 0.f, 1.f, "rgba(180,160,0,1)", "R=0.705882 G=0.627451 B=0"},
         {"HUDMessage_TutorialText", false, true, nullptr, 0.776471f, 0.843137f, 0.870588f, 1.f, "rgba(198,215,222,1)", "R=0.776471 G=0.843137 B=0.870588"},
         {"HUDMessage_VIP", false, true, nullptr, 0.188235f, 1.f, 1.f, 1.f, "rgba(48,255,255,1)", "R=0.188235 G=1 B=1"},
+        {"Halloween_Necrocite", false, true, nullptr, 0.882353f, 1.f, 0.f, 1.f, "rgba(225,255,0,1)", "R=0.882353 G=1 B=0"},
+        {"Halloween_Orange", false, true, nullptr, 1.f, 0.364706f, 0.f, 1.f, "rgba(255,93,0,1)", "R=1 G=0.364706 B=0"},
+        {"Halloween_Undedox", false, true, nullptr, 1.f, 0.650980f, 0.329412f, 1.f, "rgba(255,166,84,1)", "R=1 G=0.650980 B=0.329412"},
+        {"Halloween_Zombicine", false, true, nullptr, 0.847059f, 0.098039f, 1.f, 1.f, "rgba(216,25,255,1)", "R=0.847059 G=0.098039 B=1"},
+        {"Heat_AmountChange", false, true, nullptr, 1.f, 1.f, 1.f, 1.f, "#FFFFFF", ""},
+        {"Heat_LevelChange", false, true, nullptr, 0.984314f, 0.682353f, 0.129412f, 1.f, "#FBAE21", ""},
+        {"Hot_Pink", false, true, nullptr, 1.f, 0.f, 0.117647f, 1.f, "rgba(255,0,30,1)", "R=1 G=0 B=0.117647"},
+        {"Lobby_WorldOffline", true, true, nullptr, 0.486275f, 0.486275f, 0.486275f, 1.f, "#7C7C7C", ""},
         {"Mailbox", false, true, nullptr, 0.f, 0.419608f, 1.f, 1.f, "rgba(0,107,255,1)", "R=0 G=0.419608 B=1"},
         {"Orange", false, true, nullptr, 1.f, 0.400000f, 0.f, 1.f, "rgba(255,102,0,1)", "R=1 G=0.400000 B=0"},
         {"Orange_APB", true, true, nullptr, 0.917647f, 0.666667f, 0.098039f, 1.f, "#EAAA19", ""},
@@ -2860,23 +2883,82 @@ Notes:
         {"Purple_Bright", false, true, nullptr, 0.819608f, 0.082353f, 0.768627f, 1.f, "rgba(209,21,196,1)", "R=0.819608 G=0.082353 B=0.768627"},
         {"Purple_Dark", false, true, nullptr, 0.211765f, 0.027451f, 1.f, 1.f, "rgba(54,7,255,1)", "R=0.211765 G=0.027451 B=1"},
         {"Red", false, true, nullptr, 1.f, 0.f, 0.f, 1.f, "rgba(255,0,0,1)", "R=1 G=0 B=0"},
+        {"Red_Bright", false, true, nullptr, 1.f, 0.f, 0.f, 1.f, "rgba(255,0,0,1)", "R=1 G=0 B=0"},
         {"Red_Criminal", false, true, nullptr, 0.239216f, 0.003922f, 0.003922f, 1.f, "rgba(61,1,1,1)", "R=0.239216 G=0.003922 B=0.003922"},
         {"Red_Dark", false, true, nullptr, 0.725490f, 0.f, 0.f, 1.f, "rgba(185,0,0,1)", "R=0.725490 G=0 B=0"},
         {"Red_Pale", false, true, nullptr, 0.313725f, 0.f, 0.f, 1.f, "rgba(80,0,0,1)", "R=0.313725 G=0 B=0"},
         {"Red_mid", false, true, nullptr, 1.f, 0.215686f, 0.117647f, 1.f, "rgba(255,55,30,1)", "R=1 G=0.215686 B=0.117647"},
         {"ScoreBreakdown_Cash", false, true, nullptr, 0.984314f, 0.721569f, 0.015686f, 1.f, "rgba(251,184,4,1)", "R=0.984314 G=0.721569 B=0.015686"},
+        {"ScoreBreakdown_Name", false, true, nullptr, 1.f, 1.f, 1.f, 1.f, "rgba(255,255,255,1)", "R=1 G=1 B=1"},
+        {"ScoreBreakdown_NegativeValue", false, true, nullptr, 0.745098f, 0.f, 0.039216f, 1.f, "rgba(190,0,10,1)", "R=0.745098 G=0 B=0.039216"},
         {"ScoreBreakdown_NormalValue", false, true, nullptr, 0.007843f, 0.560784f, 0.866667f, 1.f, "rgba(2,143,221,1)", "R=0.007843 G=0.560784 B=0.866667"},
+        {"ScoreBreakdown_PremiumDisabled", false, true, nullptr, 0.250980f, 0.250980f, 0.250980f, 1.f, "rgba(64,64,64,1)", "R=0.250980 G=0.250980 B=0.250980"},
+        {"ScoreBreakdown_PremiumValue", false, true, nullptr, 1.f, 1.f, 0.f, 1.f, "rgba(255,255,0,1)", "R=1 G=1 B=0"},
+        {"ScoreBreakdown_Standing", false, true, nullptr, 0.250980f, 0.537255f, 0.066667f, 1.f, "rgba(64,137,17,1)", "R=0.250980 G=0.537255 B=0.066667"},
         {"Scoreboard_LocalPlayer", false, true, nullptr, 1.f, 0.800000f, 0.f, 1.f, "rgba(255,204,0,1)", "R=1 G=0.800000 B=0"},
+        {"Scoreboard_LocalPlayer_Premium", false, true, nullptr, 1.f, 0.843137f, 0.f, 1.f, "rgba(255,215,0,1)", "R=1 G=0.843137 B=0"},
         {"Scoreboard_Opponents", false, true, nullptr, 0.776471f, 0.f, 0.f, 1.f, "rgba(198,0,0,1)", "R=0.776471 G=0 B=0"},
+        {"Scoreboard_Opponents_Offline", false, true, nullptr, 0.776471f, 0.f, 0.f, 0.125490f, "rgba(198,0,0,0.125490)", "R=0.776471 G=0 B=0"},
+        {"Scoreboard_Opponents_Premium", false, true, nullptr, 1.f, 0.843137f, 0.f, 1.f, "rgba(255,215,0,1)", "R=1 G=0.843137 B=0"},
+        {"Scoreboard_Opponents_Premium_Offline", false, true, nullptr, 1.f, 0.843137f, 0.f, 0.125490f, "rgba(255,215,0,0.125490)", "R=1 G=0.843137 B=0"},
+        {"Scoreboard_Teammates", false, true, nullptr, 1.f, 1.f, 1.f, 1.f, "rgba(255,255,255,1)", "R=1 G=1 B=1"},
+        {"Scoreboard_Teammates_Offline", false, true, nullptr, 1.f, 1.f, 1.f, 0.062745f, "rgba(255,255,255,0.062745)", "R=1 G=1 B=1"},
+        {"Scoreboard_Teammates_Premium", false, true, nullptr, 1.f, 0.843137f, 0.f, 1.f, "rgba(255,215,0,1)", "R=1 G=0.843137 B=0"},
+        {"Scoreboard_Teammates_Premium_Offline", false, true, nullptr, 1.f, 0.843137f, 0.f, 0.062745f, "rgba(255,215,0,0.062745)", "R=1 G=0.843137 B=0"},
         {"Tutorial_KeyPress", false, true, nullptr, 1.f, 0.400000f, 0.f, 1.f, "rgba(255,102,0,1)", "R=1 G=0.400000 B=0"},
         {"Valentine_Pink", false, true, nullptr, 1.f, 0.517647f, 0.862745f, 1.f, "rgba(255,132,220,1)", "R=1 G=0.517647 B=0.862745"},
         {"White", false, true, nullptr, 1.f, 1.f, 1.f, 1.f, "rgba(255,255,255,1)", "R=1 G=1 B=1"},
+        {"White_Transparent", false, true, nullptr, 1.f, 1.f, 1.f, 0.607843f, "rgba(255,255,255,0.607843)", "R=1 G=1 B=1"},
+        {"Witnessing_Active", true, true, nullptr, 0.968627f, 0.356863f, 0.094118f, 1.f, "#F75B18", ""},
+        {"Witnessing_PendingBounty", true, true, nullptr, 0.968627f, 0.505882f, 0.439216f, 1.f, "#F78170", ""},
         {"Yellow", false, true, nullptr, 1.f, 0.674510f, 0.f, 1.f, "rgba(255,172,0,1)", "R=1 G=0.674510 B=0"},
         {"Yellow_Bright", false, true, nullptr, 1.f, 0.388235f, 0.058824f, 1.f, "rgba(255,99,15,1)", "R=1 G=0.388235 B=0.058824"},
         {"Yellow_CSA", false, true, nullptr, 1.f, 0.098039f, 0.f, 1.f, "rgba(255,25,0,1)", "R=1 G=0.098039 B=0"},
         {"Yellow_Pale", false, true, nullptr, 1.f, 1.f, 0.725490f, 1.f, "rgba(255,255,185,1)", "R=1 G=1 B=0.725490"},
         {"Yellow_TaskMarker", false, true, nullptr, 1.f, 0.760784f, 0.047059f, 0.882353f, "rgba(255,194,12,225)", "R=1 G=0.760784 B=0.047059"},
+        {"openworld_marker", false, true, nullptr, 0.196078f, 0.196078f, 0.196078f, 1.f, "rgba(50,50,50,1)", "R=0.196078 G=0.196078 B=0.196078"},
     };
+
+    static bool validateNamedTagRows(){
+        auto isHex = [](const char* text){
+            if(!text || text[0] != '#') return false;
+            const size_t len = std::strlen(text);
+            if(len != 7 && len != 9) return false;
+            for(size_t i = 1; i < len; ++i){
+                const unsigned char ch = (unsigned char)text[i];
+                if(!std::isxdigit(ch)) return false;
+            }
+            return true;
+        };
+        auto isRgba = [](const char* text){
+            return text && std::strncmp(text, "rgba(", 5) == 0 && std::strlen(text) > 6 && text[std::strlen(text) - 1] == ')';
+        };
+        auto isNormalized = [](const char* text){
+            return text && std::strncmp(text, "R=", 2) == 0 && std::strstr(text, " G=") && std::strstr(text, " B=");
+        };
+
+        std::map<std::string, int> nameCounts;
+        bool ok = true;
+        for(const auto& row : NAMED_TAG_ROWS){
+            if(!row.name || !row.name[0]){
+                ok = false;
+                continue;
+            }
+            if(++nameCounts[row.name] > 1)
+                ok = false;
+
+            const bool isNone = std::string(row.name) == "None";
+            if(!isNone){
+                if(!row.codeLine1 || !row.codeLine1[0])
+                    ok = false;
+                else if(!isHex(row.codeLine1) && !isRgba(row.codeLine1))
+                    ok = false;
+            }
+            if(row.codeLine2 && row.codeLine2[0] && !isNormalized(row.codeLine2))
+                ok = false;
+        }
+        return ok;
+    }
 
     static ImU32 tagColor(const NamedTagRow& row){
         return IM_COL32(
@@ -2938,6 +3020,7 @@ Notes:
     }
 
     static void drawNamedTagsTable(){
+        assert(validateNamedTagRows());
         if(!ImGui::BeginTable("##locnamedtagstable", 4,
             ImGuiTableFlags_RowBg |
             ImGuiTableFlags_BordersInnerV |
@@ -2947,7 +3030,7 @@ Notes:
             return;
 
         ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, 210.f);
-        ImGui::TableSetupColumn("~", ImGuiTableColumnFlags_WidthFixed, 36.f);
+        ImGui::TableSetupColumn("\xce\x98", ImGuiTableColumnFlags_WidthFixed, 36.f);
         ImGui::TableSetupColumn("Sample/Notes", ImGuiTableColumnFlags_WidthStretch, 1.2f);
         ImGui::TableSetupColumn("Code", ImGuiTableColumnFlags_WidthFixed, 270.f);
         ImGui::TableHeadersRow();
@@ -2962,7 +3045,7 @@ Notes:
             ImGui::TableSetColumnIndex(1);
             ImGui::AlignTextToFramePadding();
             if(row.approximate)
-                ImGui::TextColored(Col::SUBTEXT, "~");
+                ImGui::TextColored(Col::SUBTEXT, "\xce\x98");
 
             ImGui::TableSetColumnIndex(2);
             drawTagSample(row);
