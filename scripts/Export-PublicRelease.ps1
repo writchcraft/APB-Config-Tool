@@ -48,6 +48,11 @@ try {
 
     Expand-Archive -LiteralPath $tempZip -DestinationPath $destRoot -Force
 
+    $readme = Join-Path $destRoot 'README.md'
+    if (Test-Path -LiteralPath $readme) {
+        Remove-Item -LiteralPath $readme -Force
+    }
+
     $examples = Join-Path $repoRoot 'PremadeConfigsEXAMPLES'
     if (Test-Path -LiteralPath $examples) {
         Copy-Item -LiteralPath $examples -Destination (Join-Path $destRoot 'PremadeConfigsEXAMPLES') -Recurse -Force
@@ -63,6 +68,7 @@ try {
 
             $filterPaths = @(
                 'CMakeLists.txt'
+                'README.md'
                 '.idea'
                 '.vscode'
                 'cmake-build-release'
