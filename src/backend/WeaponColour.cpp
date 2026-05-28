@@ -7,6 +7,9 @@
 #include <cctype>
 #include <set>
 #include <stdexcept>
+#include <optional>
+#include <cstdlib>
+#include <cmath>
 #include <windows.h>
 
 namespace apb {
@@ -112,18 +115,49 @@ static const std::map<std::string,std::string> SHOP_TO_CAT = {
 std::map<std::string,int> defaultShopUIFilterOrder(){
     return {
         {"AssaultRifle", 0},
-        {"Explosive",    1},
-        {"SniperRifle",  2},
-        {"LTL",          3},
+        {"Christmas",    1},
+        {"LTL",          2},
+        {"Explosive",    3},
         {"LMG",          4},
         {"Rifle",        5},
         {"Shotgun",      6},
-        {"SMG",          7},
-        {"Christmas",    8},
+        {"SniperRifle",  7},
+        {"SMG",          8},
         {"Valentine",    9},
-        {"Pistol",       10},
-        {"Grenade",      11}
+        {"Pistol",      10},
+        {"Grenade",     11}
     };
+}
+
+static std::optional<int> parseOrderFromColorTag(const std::string& tagBody){
+    std::istringstream ss(tagBody);
+    std::string token;
+    bool sawStandardColorValue = false;
+    while(ss >> token){
+        const auto eq = token.find('=');
+        if(eq == std::string::npos)
+            continue;
+
+        std::string key = toLower(token.substr(0, eq));
+        if(key == "r" || key == "g" || key == "b" || key == "a"){
+            sawStandardColorValue = true;
+            continue;
+        }
+        if(sawStandardColorValue)
+            continue;
+
+        const std::string value = token.substr(eq + 1);
+        char* end = nullptr;
+        const double parsed = std::strtod(value.c_str(), &end);
+        if(end == value.c_str())
+            continue;
+        while(end && *end && std::isspace((unsigned char)*end))
+            ++end;
+        if(end && *end)
+            continue;
+        return (int)std::lround(parsed);
+    }
+    return std::nullopt;
 }
 
 std::map<std::string,int> parseShopUIFilterOrder(const std::string& path){
@@ -131,7 +165,7 @@ std::map<std::string,int> parseShopUIFilterOrder(const std::string& path){
     try {
         std::string text = readAny(path);
         std::regex rx(
-            "^ShopUIFilters_DeployItemCat_Weapon_([^_]+)_Name=.*<Color:F=(\\d+)",
+            "^ShopUIFilters_DeployItemCat_Weapon_([^_]+)_Name=.*$",
             std::regex::icase);
         std::istringstream ss(text);
         std::string line;
@@ -139,11 +173,20 @@ std::map<std::string,int> parseShopUIFilterOrder(const std::string& path){
             if(!line.empty() && line.back()=='\r') line.pop_back();
             std::smatch m;
             if(std::regex_search(line, m, rx)){
+                const size_t colorTagStart = line.find("<Color:");
+                if(colorTagStart == std::string::npos)
+                    continue;
+                const size_t colorTagEnd = line.find('>', colorTagStart);
+                if(colorTagEnd == std::string::npos)
+                    continue;
+                auto order = parseOrderFromColorTag(
+                    line.substr(colorTagStart + 7, colorTagEnd - (colorTagStart + 7)));
+                if(!order.has_value())
+                    continue;
                 std::string token = toLower(m[1].str());
-                int order = std::stoi(m[2].str());
                 auto it = SHOP_TO_CAT.find(token);
                 if(it != SHOP_TO_CAT.end())
-                    result[it->second] = order;
+                    result[it->second] = *order;
             }
         }
     } catch(...) {}

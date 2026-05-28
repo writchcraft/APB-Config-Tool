@@ -46,6 +46,11 @@ struct PageWeaponColour {
         ColourRuleState rule;
     };
 
+    struct CategoryClipboardState {
+        bool valid = false;
+        ColourRuleState rule;
+    };
+
     char filePath[MAX_PATH] = {};
     char inventoryIntPath[MAX_PATH] = {};
     char shopGerPath[MAX_PATH] = {};
@@ -84,6 +89,13 @@ struct PageWeaponColour {
     std::vector<std::string> fonts;
     std::vector<GunTypeDefinition> gunTypes;
     std::vector<CategoryState> categories;
+    struct CategoryOrderRow {
+        int order = 0;
+        bool fromConfig = false;
+    };
+    std::vector<CategoryOrderRow> categoryOrderRows;
+    std::string categoryOrderStatus = "Using default order.";
+    CategoryClipboardState categoryClipboard;
     std::vector<SpecificWeaponState> specificWeapons;
     SpecificWeaponClipboardState specificWeaponClipboard;
 
@@ -95,6 +107,7 @@ struct PageWeaponColour {
         fonts = availableFonts();
         gunTypes = weaponGunTypes();
         categories.resize(gunTypes.size());
+        categoryOrderRows.resize(gunTypes.size());
         for(auto& st : categories){
             applyDefaultPalette(st);
             st.fontIdx = fontIdx;
@@ -115,6 +128,36 @@ struct PageWeaponColour {
         for(char& ch : value)
             ch = (char)std::tolower((unsigned char)ch);
         return value;
+    }
+
+    static const char* friendlyCategoryName(const std::string& token){
+        if(token == "Rifle") return "Marksman / Rifle";
+        if(token == "SMG") return "SMG";
+        if(token == "AssaultRifle") return "Assault";
+        if(token == "SniperRifle") return "Sniper";
+        if(token == "Shotgun") return "Shotgun";
+        if(token == "LMG") return "Light Machine Gun / LMG";
+        if(token == "Explosive") return "Explosive";
+        if(token == "LTL") return "Less Than Lethal / LTL";
+        if(token == "Pistol") return "Pistol";
+        if(token == "Grenade") return "Grenade / Throwables";
+        if(token == "Christmas") return "Christmas";
+        if(token == "Valentine") return "Valentines";
+        return token.c_str();
+    }
+
+    static void copyColourRuleState(ColourRuleState& dst, const ColourRuleState& src){
+        dst.enabled = src.enabled;
+        dst.fontIdx = src.fontIdx;
+        dst.modeIdx = src.modeIdx;
+        copyColor(dst.solid, src.solid);
+        for(int i = 0; i < 6; ++i)
+            copyColor(dst.stepped[i], src.stepped[i]);
+        copyColor(dst.smoothStart, src.smoothStart);
+        copyColor(dst.smoothEnd, src.smoothEnd);
+        copyColor(dst.tripleStart, src.tripleStart);
+        copyColor(dst.tripleMid, src.tripleMid);
+        copyColor(dst.tripleEnd, src.tripleEnd);
     }
 
     static ColourMode modeFromIndex(int modeIdx){
@@ -153,7 +196,7 @@ struct PageWeaponColour {
         if(idx <= 0) return "All Classes";
         const int gunIdx = idx - 1;
         if(gunIdx >= 0 && gunIdx < (int)gunTypes.size())
-            return gunTypes[gunIdx].label.c_str();
+            return friendlyCategoryName(gunTypes[gunIdx].categoryToken);
         return "All Classes";
     }
 
@@ -256,35 +299,26 @@ struct PageWeaponColour {
 
     void copySpecificWeaponState(const SpecificWeaponState& src){
         specificWeaponClipboard.valid = true;
-        specificWeaponClipboard.rule.enabled = src.enabled;
-        specificWeaponClipboard.rule.fontIdx = src.fontIdx;
-        specificWeaponClipboard.rule.modeIdx = src.modeIdx;
-        copyColor(specificWeaponClipboard.rule.solid, src.solid);
-        for(int i = 0; i < 6; ++i)
-            copyColor(specificWeaponClipboard.rule.stepped[i], src.stepped[i]);
-        copyColor(specificWeaponClipboard.rule.smoothStart, src.smoothStart);
-        copyColor(specificWeaponClipboard.rule.smoothEnd, src.smoothEnd);
-        copyColor(specificWeaponClipboard.rule.tripleStart, src.tripleStart);
-        copyColor(specificWeaponClipboard.rule.tripleMid, src.tripleMid);
-        copyColor(specificWeaponClipboard.rule.tripleEnd, src.tripleEnd);
+        copyColourRuleState(specificWeaponClipboard.rule, src);
     }
 
     void pasteSpecificWeaponState(SpecificWeaponState& dst) const{
         if(!specificWeaponClipboard.valid)
             return;
+        copyColourRuleState(dst, specificWeaponClipboard.rule);
+    }
 
-        const ColourRuleState& src = specificWeaponClipboard.rule;
-        dst.enabled = src.enabled;
-        dst.fontIdx = src.fontIdx;
-        dst.modeIdx = src.modeIdx;
-        copyColor(dst.solid, src.solid);
-        for(int i = 0; i < 6; ++i)
-            copyColor(dst.stepped[i], src.stepped[i]);
-        copyColor(dst.smoothStart, src.smoothStart);
-        copyColor(dst.smoothEnd, src.smoothEnd);
-        copyColor(dst.tripleStart, src.tripleStart);
-        copyColor(dst.tripleMid, src.tripleMid);
-        copyColor(dst.tripleEnd, src.tripleEnd);
+    void copyCategoryState(const CategoryState& src){
+        categoryClipboard.valid = true;
+        copyColourRuleState(categoryClipboard.rule, src);
+    }
+
+    void pasteCategoryState(CategoryState& dst) const{
+        if(!categoryClipboard.valid)
+            return;
+        const bool enabled = dst.enabled;
+        copyColourRuleState(dst, categoryClipboard.rule);
+        dst.enabled = enabled;
     }
 
     void drawColourControls(const char* prefix, int idx, ColourRuleState& st){
@@ -430,30 +464,62 @@ struct PageWeaponColour {
         std::map<std::string,int> orderMap;
         if(!resolvedShopPath.empty())
             orderMap = apb::parseShopUIFilterOrder(resolvedShopPath);
-        if(orderMap.empty())
-            orderMap = apb::defaultShopUIFilterOrder();
+
+        const auto defaultOrderMap = apb::defaultShopUIFilterOrder();
+        const bool usingConfigOrder = !orderMap.empty();
+        categoryOrderStatus = usingConfigOrder
+            ? "Using ShopUIFilters order. Missing categories are filled with defaults."
+            : "Using default order.";
+
+        struct OrderedCategory {
+            int sourceGroup = 1;
+            int order = 0;
+            int originalIndex = 0;
+            bool fromConfig = false;
+        };
 
         const int n = (int)gunTypes.size();
-        std::vector<int> idx(n);
-        std::iota(idx.begin(), idx.end(), 0);
-        std::stable_sort(idx.begin(), idx.end(), [&](int a, int b){
-            auto ia = orderMap.find(gunTypes[a].categoryToken);
-            auto ib = orderMap.find(gunTypes[b].categoryToken);
-            int va = (ia != orderMap.end()) ? ia->second : n + a;
-            int vb = (ib != orderMap.end()) ? ib->second : n + b;
-            return va < vb;
+        std::vector<OrderedCategory> ordering;
+        ordering.reserve(n);
+        for(int i = 0; i < n; ++i){
+            OrderedCategory row;
+            row.originalIndex = i;
+            auto configIt = orderMap.find(gunTypes[i].categoryToken);
+            if(configIt != orderMap.end()){
+                row.sourceGroup = 0;
+                row.order = configIt->second;
+                row.fromConfig = true;
+            } else {
+                auto defaultIt = defaultOrderMap.find(gunTypes[i].categoryToken);
+                row.sourceGroup = 1;
+                row.order = defaultIt != defaultOrderMap.end() ? defaultIt->second : (n + i);
+                row.fromConfig = false;
+            }
+            ordering.push_back(row);
+        }
+
+        std::stable_sort(ordering.begin(), ordering.end(), [](const OrderedCategory& a, const OrderedCategory& b){
+            if(a.sourceGroup != b.sourceGroup)
+                return a.sourceGroup < b.sourceGroup;
+            if(a.order != b.order)
+                return a.order < b.order;
+            return a.originalIndex < b.originalIndex;
         });
 
         std::vector<GunTypeDefinition> newTypes;
         std::vector<CategoryState> newCats;
+        std::vector<CategoryOrderRow> newOrders;
         newTypes.reserve(n);
         newCats.reserve(n);
-        for(int i : idx){
-            newTypes.push_back(std::move(gunTypes[i]));
-            newCats.push_back(std::move(categories[i]));
+        newOrders.reserve(n);
+        for(const auto& row : ordering){
+            newTypes.push_back(std::move(gunTypes[row.originalIndex]));
+            newCats.push_back(std::move(categories[row.originalIndex]));
+            newOrders.push_back({row.order, row.fromConfig});
         }
         gunTypes    = std::move(newTypes);
         categories  = std::move(newCats);
+        categoryOrderRows = std::move(newOrders);
         specificCategoryFilterIdx = 0;
     }
 
@@ -502,9 +568,7 @@ struct PageWeaponColour {
 
     void drawPresetConfig(){
         SectionLabel("Quick Preset");
-        SectionNote("Build one palette here, then stamp it onto category rules or selected weapon overrides.");
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::ITEM_BG);
-        ImGui::BeginChild("##wcPresetConfig", {0.f, 128.f}, true);
+        SectionNote("Create one colour preset, then apply it to categories or selected weapon overrides.");
 
         if(BeginSectionTable("##wcPresetGrid", 96.f, 0.f)){
             BeginSectionRow("Preset");
@@ -533,11 +597,7 @@ struct PageWeaponColour {
             }
 
             BeginSectionRow("Colours");
-            if(quickPresetIdx > 0 && presetModeIdx == 0){
-                ImGui::TextColored(Col::SUBTEXT, "Per-category colours applied when stamped.");
-            } else {
-                drawPresetColourControls();
-            }
+            drawPresetColourControls();
             EndSectionTable();
         }
 
@@ -569,22 +629,20 @@ struct PageWeaponColour {
                     if(st.enabled) applyPresetToRule(st);
             }
         }
-        ImGui::TextColored(Col::SUBTEXT, "This preset is just a shortcut for stamping colour rules.");
-
-        ImGui::EndChild();
-        ImGui::PopStyleColor();
+        ImGui::TextColored(Col::SUBTEXT, "Create one colour preset, then apply it to categories or selected weapon overrides.");
     }
 
     void drawCategorySection(){
         SectionLabel("Category Rules");
-        SectionNote("Start here. Most setups only need category rules, with one palette per weapon class.");
+        SectionNote("Review each weapon category before export. Enabled rows will be exported in the order shown below.");
 
         if(ImGui::BeginTable("##wcCategoryToolbar", 2,
             ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoSavedSettings))
         {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(0);
-            ImGui::TextColored(Col::SUBTEXT, "%d categories", (int)gunTypes.size());
+            ImGui::TextColored(Col::SUBTEXT, "%d categories found", (int)gunTypes.size());
+            ImGui::TextColored(Col::SUBTEXT, "%s", categoryOrderStatus.c_str());
             ImGui::TableSetColumnIndex(1);
             const float actionWidth = 110.f;
             const float rightEdge = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
@@ -599,63 +657,100 @@ struct PageWeaponColour {
             ImGui::EndTable();
         }
 
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::ITEM_BG);
-        ImGui::BeginChild("##wcCategoriesPanel", {0.f, 404.f}, true);
-        if(ImGui::BeginTable("##wcCategoriesSimple", 4,
-            ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings | ImGuiTableFlags_ScrollY,
+        ImGui::Spacing();
+        if(ImGui::BeginTable("##wcCategoriesSimple", 8,
+            ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit |
+            ImGuiTableFlags_NoSavedSettings,
             {-1.f, 0.f}))
         {
-            ImGui::TableSetupColumn("Category", ImGuiTableColumnFlags_WidthFixed, 210.f);
+            ImGui::TableSetupColumn("Use", ImGuiTableColumnFlags_WidthFixed, 46.f);
+            ImGui::TableSetupColumn("Order", ImGuiTableColumnFlags_WidthFixed, 72.f);
+            ImGui::TableSetupColumn("Source", ImGuiTableColumnFlags_WidthFixed, 78.f);
+            ImGui::TableSetupColumn("Category", ImGuiTableColumnFlags_WidthFixed, 260.f);
             ImGui::TableSetupColumn("Mode", ImGuiTableColumnFlags_WidthFixed, 160.f);
-            ImGui::TableSetupColumn("Colours", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Colours", ImGuiTableColumnFlags_WidthFixed, 420.f);
             ImGui::TableSetupColumn("Font", ImGuiTableColumnFlags_WidthFixed, 300.f);
+            ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 104.f);
+            ImGui::TableHeadersRow();
 
             for(int i = 0; i < (int)gunTypes.size(); ++i){
                 auto& st = categories[i];
+                const auto& def = gunTypes[i];
+                const auto& ord = categoryOrderRows[i];
                 ImGui::PushID(i);
                 ImGui::TableNextRow();
 
                 ImGui::TableSetColumnIndex(0);
                 ImGui::AlignTextToFramePadding();
                 ImGui::Checkbox("##enabled", &st.enabled);
-                ImGui::SameLine();
-                ImGui::BeginGroup();
-                ImGui::TextUnformatted(gunTypes[i].label.c_str());
-                ImGui::TextColored(Col::SUBTEXT, "%s", gunTypes[i].categoryToken.c_str());
-                ImGui::EndGroup();
-                if(ImGui::IsItemHovered())
-                    ImGui::SetTooltip("%s", gunTypes[i].keyPrefix.c_str());
 
                 ImGui::TableSetColumnIndex(1);
-                drawModeCombo("##mode", st);
-
+                ImGui::Text("%d", ord.order);
                 ImGui::TableSetColumnIndex(2);
-                drawColourControls("category", i, st);
+                ImGui::TextColored(ord.fromConfig ? Col::YELLOW : Col::SUBTEXT,
+                    ord.fromConfig ? "Config" : "Default");
+                if(ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Order source: %s", ord.fromConfig ? "found in ShopUIFilters" : "added automatically");
 
                 ImGui::TableSetColumnIndex(3);
+                ImGui::BeginGroup();
+                ImGui::TextUnformatted(friendlyCategoryName(def.categoryToken));
+                ImGui::TextColored(Col::SUBTEXT, "%s", def.categoryToken.c_str());
+                ImGui::EndGroup();
+                if(ImGui::IsItemHovered())
+                    ImGui::SetTooltip("%s", def.keyPrefix.c_str());
+
+                ImGui::TableSetColumnIndex(4);
+                drawModeCombo("##mode", st);
+
+                ImGui::TableSetColumnIndex(5);
+                drawColourControls("category", i, st);
+
+                ImGui::TableSetColumnIndex(6);
                 drawFontCombo("##font", st.fontIdx);
+
+                ImGui::TableSetColumnIndex(7);
+                if(ImGui::SmallButton("Copy##wcCategoryCopy")){
+                    copyCategoryState(st);
+                }
+                if(ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Copy this category's colour and font settings.");
+                ImGui::SameLine();
+                const bool canPasteCategory = categoryClipboard.valid;
+                if(!canPasteCategory)
+                    ImGui::BeginDisabled();
+                if(ImGui::SmallButton("Paste##wcCategoryPaste")){
+                    pasteCategoryState(st);
+                }
+                if(ImGui::IsItemHovered())
+                    ImGui::SetTooltip("Paste the last copied category colour and font settings.");
+                if(!canPasteCategory)
+                    ImGui::EndDisabled();
 
                 ImGui::PopID();
             }
 
             ImGui::EndTable();
         }
-        ImGui::EndChild();
-        ImGui::PopStyleColor();
+        ImGui::Spacing();
     }
 
     void drawFileSettingsSection(){
         SectionLabel("File Settings");
+        SectionNote("Select your source files first. ShopUIFilters controls the weapon category order.");
         ImGui::PushStyleColor(ImGuiCol_ChildBg, Col::ITEM_BG);
-        ImGui::BeginChild("##wcFileConfig", {0.f, 140.f}, true);
-        if(BeginSectionTable("##wcFileInventoryGrid", 126.f, 86.f)){
+        ImGui::BeginChild("##wcFileConfig", {0.f, 148.f}, true);
+        if(BeginSectionTable("##wcFileInventoryGrid", 152.f, 92.f)){
             BeginSectionRow("InventoryItemTypes");
             ImGui::SetNextItemWidth(-FLT_MIN);
-            ImGui::InputText("##wcInventoryMain", inventoryIntPath, sizeof(inventoryIntPath));
+            if(ImGui::InputText("##wcInventoryMain", inventoryIntPath, sizeof(inventoryIntPath))){
+                categoryOrderPending = true;
+                inventoryScanPending = true;
+            }
             NextSectionAction();
             if(ImGui::Button("Browse##wcInventoryMain")){
                 std::string s;
-                if(BrowseFile(s, "All Files\0*.*\0\0")){
+                if(BrowseFile(s, "INT Files\0*.int;*.INT\0All Files\0*.*\0\0")){
                     std::snprintf(inventoryIntPath, sizeof(inventoryIntPath), "%s", s.c_str());
                     categoryOrderPending = true;
                     inventoryScanPending = true;
@@ -664,13 +759,14 @@ struct PageWeaponColour {
 
             BeginSectionRow("ShopUIFilters");
             ImGui::SetNextItemWidth(-FLT_MIN);
-            ImGui::InputText("##wcShopGer", shopGerPath, sizeof(shopGerPath));
+            if(ImGui::InputText("##wcShopGer", shopGerPath, sizeof(shopGerPath)))
+                categoryOrderPending = true;
             if(ImGui::IsItemHovered() && !shopGerPath[0])
-                ImGui::SetTooltip("Auto-detected on load. Controls category sort order (F= values).");
+                ImGui::SetTooltip("Auto-detected on load. Controls category sort order from the first <Color:...> tag.");
             NextSectionAction();
             if(ImGui::Button("Browse##wcShopGer")){
                 std::string s;
-                if(BrowseFile(s, "All Files\0*.*\0\0")){
+                if(BrowseFile(s, "GER Files\0*.ger;*.GER\0All Files\0*.*\0\0")){
                     std::snprintf(shopGerPath, sizeof(shopGerPath), "%s", s.c_str());
                     categoryOrderPending = true;
                 }
@@ -691,17 +787,6 @@ struct PageWeaponColour {
         }
         ImGui::EndChild();
         ImGui::PopStyleColor();
-    }
-
-    void drawIgnoreRulesSection(){
-        ImGui::Spacing();
-        SectionLabel("Ignore Rules");
-        if(ImGui::CollapsingHeader("Edit Ignore Rules", ImGuiTreeNodeFlags_None)){
-            ImGui::TextColored(Col::SUBTEXT, "One key, key prefix, pasted line, or substring per line.");
-            ImGui::InputTextMultiline("##wcIgnoreList", ignoreList, sizeof(ignoreList), {-1.f, 78.f});
-        } else {
-            ImGui::TextColored(Col::SUBTEXT, "Leave this alone unless you need to exclude specific keys.");
-        }
     }
 
     void drawOutputSection(){
@@ -748,11 +833,11 @@ struct PageWeaponColour {
     }
 
     void drawRunAndLogSections(bool includeLog = true){
-        SectionLabel("Run");
+        SectionLabel("Export");
         bool busy = running.load();
         bool canRun = canStartAction();
         if(!canRun) ImGui::BeginDisabled();
-        if(RunButton("Run##wc")) startAction();
+        if(RunButton("Export Weapon Colours##wc", 176.f)) startAction();
         if(!canRun) ImGui::EndDisabled();
         ImGui::SameLine();
         if(!lastOut.empty() && ImGui::Button("Open Output", {110,32})) OpenInExplorer(lastOut);
@@ -835,7 +920,8 @@ struct PageWeaponColour {
 
         ImGui::Text("InventoryItemTypes:"); ImGui::SameLine();
         ImGui::SetNextItemWidth(std::max(360.f, ImGui::GetContentRegionAvail().x - 156.f));
-        ImGui::InputText("##wcInventoryInt", inventoryIntPath, sizeof(inventoryIntPath));
+        if(ImGui::InputText("##wcInventoryInt", inventoryIntPath, sizeof(inventoryIntPath)))
+            inventoryScanPending = true;
         ImGui::SameLine();
         if(ImGui::Button("Browse##wcInventoryInt")){
             std::string s;
@@ -858,7 +944,7 @@ struct PageWeaponColour {
             if(specificCategoryFilterIdx == 0) ImGui::SetItemDefaultFocus();
             for(int i = 0; i < (int)gunTypes.size(); ++i){
                 const bool selected = (specificCategoryFilterIdx == i + 1);
-                if(ImGui::Selectable(gunTypes[i].label.c_str(), selected))
+                if(ImGui::Selectable(friendlyCategoryName(gunTypes[i].categoryToken), selected))
                     specificCategoryFilterIdx = i + 1;
                 if(selected) ImGui::SetItemDefaultFocus();
             }
@@ -920,8 +1006,11 @@ struct PageWeaponColour {
                 ImGui::Checkbox("##enabled", &st.enabled);
 
                 ImGui::TableSetColumnIndex(1);
+                ImGui::BeginGroup();
                 ImGui::TextUnformatted(st.displayName.c_str());
+                ImGui::TextColored(Col::SUBTEXT, "%s", friendlyCategoryName(st.categoryToken));
                 ImGui::TextColored(Col::SUBTEXT, "%s", st.categoryToken.c_str());
+                ImGui::EndGroup();
                 if(ImGui::IsItemHovered())
                     ImGui::SetTooltip("%s", st.fullKey.c_str());
 
@@ -963,7 +1052,8 @@ struct PageWeaponColour {
 
         ImGui::Text("InventoryItemTypes:"); ImGui::SameLine();
         ImGui::SetNextItemWidth(std::max(360.f, ImGui::GetContentRegionAvail().x - 156.f));
-        ImGui::InputText("##wcInventoryIntMerged", inventoryIntPath, sizeof(inventoryIntPath));
+        if(ImGui::InputText("##wcInventoryIntMerged", inventoryIntPath, sizeof(inventoryIntPath)))
+            inventoryScanPending = true;
         ImGui::SameLine();
         if(ImGui::Button("Browse##wcInventoryIntMerged")){
             std::string s;
@@ -988,7 +1078,7 @@ struct PageWeaponColour {
             if(specificCategoryFilterIdx == 0) ImGui::SetItemDefaultFocus();
             for(int i = 0; i < (int)gunTypes.size(); ++i){
                 const bool selected = (specificCategoryFilterIdx == i + 1);
-                if(ImGui::Selectable(gunTypes[i].label.c_str(), selected))
+                if(ImGui::Selectable(friendlyCategoryName(gunTypes[i].categoryToken), selected))
                     specificCategoryFilterIdx = i + 1;
                 if(selected) ImGui::SetItemDefaultFocus();
             }
@@ -1037,8 +1127,11 @@ struct PageWeaponColour {
                 ImGui::Checkbox("##enabled", &st.enabled);
 
                 ImGui::TableSetColumnIndex(1);
+                ImGui::BeginGroup();
                 ImGui::TextUnformatted(st.displayName.c_str());
+                ImGui::TextColored(Col::SUBTEXT, "%s", friendlyCategoryName(st.categoryToken));
                 ImGui::TextColored(Col::SUBTEXT, "%s", st.categoryToken.c_str());
+                ImGui::EndGroup();
                 if(ImGui::IsItemHovered())
                     ImGui::SetTooltip("%s", st.fullKey.c_str());
 
@@ -1091,14 +1184,13 @@ struct PageWeaponColour {
         }
 
         ImGui::BeginChild("##wc",{0,0},false, ImGuiWindowFlags_HorizontalScrollbar);
-        SectionLabel("Weapon Colour - InventoryItemTypes.GER");
-        SectionNote("Build your category colours here, then use Specific Weapon Overrides only when individual weapons need exceptions.");
+        SectionLabel("Weapon Colour");
+        SectionNote("Select source files, build a preset, review category rules, then export the updated config.");
 
         drawFileSettingsSection();
 
         drawPresetConfig();
         drawCategorySection();
-        drawIgnoreRulesSection();
         drawRunAndLogSections();
         ImGui::EndChild();
     }
