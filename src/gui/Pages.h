@@ -1280,6 +1280,40 @@ struct PageReloadResupplyText {
         return fonts[idx].c_str();
     }
 
+    static bool BeginFormTable(const char* id, float labelWidth = 124.f){
+        if(!ImGui::BeginTable(id, 2, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoSavedSettings))
+            return false;
+        ImGui::TableSetupColumn("Label", ImGuiTableColumnFlags_WidthFixed, labelWidth);
+        ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+        return true;
+    }
+
+    static void BeginFormRow(const char* label){
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(label);
+        ImGui::TableSetColumnIndex(1);
+    }
+
+    static void drawPanelHeader(const char* title){
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::YELLOW);
+        ImGui::TextUnformatted(title);
+        ImGui::PopStyleColor();
+        ImGui::PushStyleColor(ImGuiCol_Separator, {0.30f, 0.25f, 0.04f, 1.f});
+        ImGui::Separator();
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+    }
+
+    template<typename Fn>
+    void drawPanel(const char* id, const char* title, float height, Fn&& body){
+        ImGui::BeginChild(id, ImVec2(0.f, height), true);
+        drawPanelHeader(title);
+        body();
+        ImGui::EndChild();
+    }
+
     void drawFontCombo(const char* id, int& fontIdx){
         ImGui::SetNextItemWidth(-FLT_MIN);
         if(fonts.empty()){
@@ -1316,35 +1350,36 @@ struct PageReloadResupplyText {
 
     static void drawColourControls(const char* prefix, TextStyleState& state){
         ImGui::PushID(prefix);
+        const float swatchSize = 22.f;
         if(state.modeIdx == 0){
-            ColorPickerButton("##solid", state.solid);
+            ColorPickerButton("##solid", state.solid, swatchSize, swatchSize);
         } else if(state.modeIdx == 1){
             for(int i = 0; i < 6; ++i){
                 char id[16];
                 std::snprintf(id, sizeof(id), "##step%d", i);
-                ColorPickerButton(id, state.stepped[i], 22.f, 20.f);
+                ColorPickerButton(id, state.stepped[i], swatchSize, swatchSize);
                 if(i < 5) ImGui::SameLine();
             }
         } else if(state.modeIdx == 2){
             ImGui::TextUnformatted("Start");
             ImGui::SameLine();
-            ColorPickerButton("##smoothA", state.smoothStart);
+            ColorPickerButton("##smoothA", state.smoothStart, swatchSize, swatchSize);
             ImGui::SameLine();
             ImGui::TextUnformatted("End");
             ImGui::SameLine();
-            ColorPickerButton("##smoothB", state.smoothEnd);
+            ColorPickerButton("##smoothB", state.smoothEnd, swatchSize, swatchSize);
         } else {
             ImGui::TextUnformatted("1");
             ImGui::SameLine();
-            ColorPickerButton("##tripleA", state.tripleStart);
+            ColorPickerButton("##tripleA", state.tripleStart, swatchSize, swatchSize);
             ImGui::SameLine();
             ImGui::TextUnformatted("2");
             ImGui::SameLine();
-            ColorPickerButton("##tripleB", state.tripleMid);
+            ColorPickerButton("##tripleB", state.tripleMid, swatchSize, swatchSize);
             ImGui::SameLine();
             ImGui::TextUnformatted("3");
             ImGui::SameLine();
-            ColorPickerButton("##tripleC", state.tripleEnd);
+            ColorPickerButton("##tripleC", state.tripleEnd, swatchSize, swatchSize);
         }
         ImGui::PopID();
     }
@@ -1681,13 +1716,15 @@ struct PageReloadResupplyText {
         return out;
     }
 
-    void drawPreview(const TextStyleState& state, const char* fallbackText){
+    ImVec2 drawPreview(const TextStyleState& state, const char* fallbackText){
         ensurePreviewTexture();
 
         const std::string previewText = sanitizePreviewText(state.text, fallbackText);
 
         const float availW = ImGui::GetContentRegionAvail().x;
         const float previewW = std::min(availW, 760.f);
+        const float centeredX = std::max(0.f, (availW - previewW) * 0.5f);
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + centeredX);
         const float fallbackH = previewW * (129.f / 499.f);
         const float previewH = backgroundSrv && backgroundW > 0
             ? previewW * ((float)backgroundH / (float)backgroundW)
@@ -1726,42 +1763,27 @@ struct PageReloadResupplyText {
             x += font->CalcTextSizeA(fontSize, FLT_MAX, 0.f, buf).x;
         }
         ImGui::Dummy({previewW, previewH});
+        return {previewW, previewH};
     }
 
     void drawEntryEditor(const char* tabId, const char* title, TextStyleState& state, const char* fallbackText){
-        SectionLabel(title);
-        if(BeginSectionTable(tabId, 124.f, 110.f)){
-            BeginSectionRow("Text");
+        (void)title;
+        (void)fallbackText;
+        if(BeginFormTable(tabId, 124.f)){
+            BeginFormRow("Text");
             ImGui::SetNextItemWidth(-FLT_MIN);
             ImGui::InputText("##rrtext", state.text, sizeof(state.text));
 
-            BeginSectionRow("Mode");
+            BeginFormRow("Mode");
             drawModeCombo("##rrmode", state);
 
-            BeginSectionRow("Colours");
+            BeginFormRow("Colours");
             drawColourControls("rrcolours", state);
 
-            BeginSectionRow("Font");
+            BeginFormRow("Font");
             drawFontCombo("##rrfont", state.fontIdx);
-            EndSectionTable();
+            ImGui::EndTable();
         }
-
-        SectionLabel("Preview");
-        if(BeginSectionTable("##rrpreviewgrid", 124.f, 110.f)){
-            BeginSectionRow("");
-            ImGui::Dummy({0.f, 0.f});
-            NextSectionAction();
-            ImGui::PushStyleColor(ImGuiCol_Button,        Col::BTN_OK);
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Col::YELLOW_DIM);
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::YELLOW_DIM);
-            ImGui::PushStyleColor(ImGuiCol_Text,          {0.04f,0.04f,0.04f,1.f});
-            ImGui::PushStyleColor(ImGuiCol_Border,        Col::YELLOW_DIM);
-            if(ImGui::Button("Save##rrsave", {86.f, 32.f})) saveCurrentSection();
-            ImGui::PopStyleColor(5);
-            EndSectionTable();
-        }
-        drawPreview(state, fallbackText);
-        SectionNote("Preview uses embedded Helvetica faces for mapped APB font tags. None keeps save output tag-free.");
     }
 
     void draw(){
@@ -1771,16 +1793,18 @@ struct PageReloadResupplyText {
         ImGui::BeginChild("##reloadresupply", {0, 0}, false);
         SectionLabel("Reload / Resupply Text");
         SectionNote("Edit the APBUserInterface.GER Reload and Resupply entries and preview them against the in-game background.");
-
         SectionLabel("File");
-        if(BeginSectionTable("##rrfilegrid", 124.f, 110.f)){
+        if(BeginSectionTable("##rrfilegrid", 124.f, 86.f)){
             BeginSectionRow("GER File");
-            ImGui::SetNextItemWidth(-FLT_MIN);
+            const float browseButtonW = 86.f;
+            const float browseGap = ImGui::GetStyle().ItemSpacing.x;
+            const float pathW = std::max(160.f, ImGui::GetContentRegionAvail().x - browseButtonW - browseGap);
+            ImGui::SetNextItemWidth(pathW);
             if(ImGui::InputText("##rrgerpath", gerPath, MAX_PATH)){
                 autoLoadAttempted = true;
             }
             NextSectionAction();
-            if(ImGui::Button("Browse##rrger")){
+            if(ImGui::Button("Browse##rrger", {browseButtonW, 0.f})){
                 std::string s;
                 if(BrowseFile(s, "GER Files\0*.ger;*.GER\0All Files\0*.*\0\0")){
                     std::snprintf(gerPath, sizeof(gerPath), "%s", s.c_str());
@@ -1807,6 +1831,7 @@ struct PageReloadResupplyText {
             EndSectionTable();
         }
 
+        SectionLabel("Editor");
         if(ImGui::BeginTabBar("##rrtabs")){
             if(ImGui::BeginTabItem("Reload", nullptr,
                 (applySavedTabSelection && activeTabIdx == 0) ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None)){
@@ -1824,10 +1849,33 @@ struct PageReloadResupplyText {
             }
             ImGui::EndTabBar();
         }
+        ImGui::Spacing();
+        const float saveButtonW = 100.f;
+        const float saveButtonX = std::max(0.f, ImGui::GetContentRegionAvail().x - saveButtonW);
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + saveButtonX);
+        ImGui::PushStyleColor(ImGuiCol_Button,        Col::BTN_OK);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Col::YELLOW_DIM);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Col::YELLOW_DIM);
+        ImGui::PushStyleColor(ImGuiCol_Text,          {0.04f, 0.04f, 0.04f, 1.f});
+        ImGui::PushStyleColor(ImGuiCol_Border,        Col::YELLOW_DIM);
+        if(ImGui::Button("Save##rrsave", {saveButtonW, 28.f})) saveCurrentSection();
+        ImGui::PopStyleColor(5);
+
+        SectionLabel("Preview");
+        const TextStyleState& activeState = (activeTabIdx == 0) ? reload : resupply;
+        const char* fallbackText = (activeTabIdx == 0) ? "Reload" : "Resupply";
+        ImVec2 previewSize = drawPreview(activeState, fallbackText);
+        const float noteX = std::max(0.f, (ImGui::GetContentRegionAvail().x - previewSize.x) * 0.5f);
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + noteX);
+        ImGui::PushStyleColor(ImGuiCol_Text, Col::SUBTEXT);
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + previewSize.x);
+        ImGui::TextWrapped("Preview uses embedded Helvetica faces for mapped APB font tags. None keeps save output tag-free.");
+        ImGui::PopTextWrapPos();
+        ImGui::PopStyleColor();
 
         SectionLabel("Log");
         std::string t = log.get();
-        ReadOnlyLogBox("##rrlog", t, {-1.f, -1.f});
+        ReadOnlyLogBox("##rrlog", t, {-1.f, 120.f});
         ImGui::EndChild();
     }
 };

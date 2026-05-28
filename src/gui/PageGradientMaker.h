@@ -702,7 +702,13 @@ struct PageGradientMaker {
             ImGui::BeginChild(id, {0.f, panelH}, true);
             ImGui::TextUnformatted(title);
             ImGui::Spacing();
-            ReadOnlyLogBox("##gmOutputText", buffer, {-FLT_MIN, panelH - 52.f});
+            ImGui::PushStyleColor(ImGuiCol_FrameBg, Col::ITEM_BG);
+            ImGui::InputTextMultiline("##gmOutputText", buffer, std::strlen(buffer) + 1,
+                {-FLT_MIN, panelH - 52.f},
+                ImGuiInputTextFlags_ReadOnly |
+                ImGuiInputTextFlags_WordWrap |
+                ImGuiInputTextFlags_NoHorizontalScroll);
+            ImGui::PopStyleColor();
             ImGui::EndChild();
             ImGui::PopStyleColor();
         };

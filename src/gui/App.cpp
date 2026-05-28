@@ -48,7 +48,7 @@ static std::vector<NavGroup> s_nav = {
     { "Content",      {{"Player Roles",PAGE_PLAYER_ROLES},{"Reload / Resupply Text",PAGE_RELOAD_RESUPPLY},{"Contact Description",PAGE_CONTACTS}}, false },
     { "Templates",    {{"Premade Configs",PAGE_PREMADE_CONFIGS}}, false },
     { "Reference",    {{"Localization",PAGE_LOCALIZATION},{"Hex Converter",PAGE_HEX_CONVERTER}}, false },
-    { "Application",  {{"Settings",PAGE_SETTINGS},{"Credits",PAGE_CREDITS}}, false },
+    { "Application",  {{"Theme Maker",PAGE_SETTINGS},{"Credits",PAGE_CREDITS}}, false },
 };
 static const char* pageCategory[PAGE_COUNT] = {
     "Colour Tools","Colour Tools",
