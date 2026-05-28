@@ -772,7 +772,8 @@ void Render(){
     ImGui::Begin("##content", nullptr,
         ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoNav |
         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
-        ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoBringToFrontOnFocus);
+        ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoBringToFrontOnFocus |
+        ImGuiWindowFlags_HorizontalScrollbar);
     drawPage();
     ImGui::End();
     ImGui::PopStyleVar(2);

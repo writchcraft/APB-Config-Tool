@@ -834,7 +834,7 @@ struct PageWeaponColour {
         SectionNote("Use this only when one weapon needs to break away from its category rule.");
 
         ImGui::Text("InventoryItemTypes:"); ImGui::SameLine();
-        ImGui::SetNextItemWidth(-156.f);
+        ImGui::SetNextItemWidth(std::max(360.f, ImGui::GetContentRegionAvail().x - 156.f));
         ImGui::InputText("##wcInventoryInt", inventoryIntPath, sizeof(inventoryIntPath));
         ImGui::SameLine();
         if(ImGui::Button("Browse##wcInventoryInt")){
@@ -898,14 +898,14 @@ struct PageWeaponColour {
 
         const float listHeight = filePath[0] ? 520.f : 560.f;
         if(ImGui::BeginTable("##wcSpecificWeapons", 5,
-            ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY,
+            ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY,
             {-1.f, listHeight}))
         {
-            ImGui::TableSetupColumn("Apply", ImGuiTableColumnFlags_WidthFixed, 52.f);
-            ImGui::TableSetupColumn("Weapon", ImGuiTableColumnFlags_WidthFixed, 340.f);
-            ImGui::TableSetupColumn("Mode", ImGuiTableColumnFlags_WidthFixed, 150.f);
-            ImGui::TableSetupColumn("Colours", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Font", ImGuiTableColumnFlags_WidthFixed, 300.f);
+            ImGui::TableSetupColumn("Apply", ImGuiTableColumnFlags_WidthFixed, 56.f);
+            ImGui::TableSetupColumn("Weapon", ImGuiTableColumnFlags_WidthFixed, 380.f);
+            ImGui::TableSetupColumn("Mode", ImGuiTableColumnFlags_WidthFixed, 170.f);
+            ImGui::TableSetupColumn("Colours", ImGuiTableColumnFlags_WidthFixed, 430.f);
+            ImGui::TableSetupColumn("Font", ImGuiTableColumnFlags_WidthFixed, 340.f);
             ImGui::TableHeadersRow();
 
             for(int i = 0; i < (int)specificWeapons.size(); ++i){
@@ -962,7 +962,7 @@ struct PageWeaponColour {
         SectionNote("Use this only when one weapon needs to break away from its category rule.");
 
         ImGui::Text("InventoryItemTypes:"); ImGui::SameLine();
-        ImGui::SetNextItemWidth(-156.f);
+        ImGui::SetNextItemWidth(std::max(360.f, ImGui::GetContentRegionAvail().x - 156.f));
         ImGui::InputText("##wcInventoryIntMerged", inventoryIntPath, sizeof(inventoryIntPath));
         ImGui::SameLine();
         if(ImGui::Button("Browse##wcInventoryIntMerged")){
@@ -1015,14 +1015,14 @@ struct PageWeaponColour {
 
         const float listHeight = filePath[0] ? 520.f : 560.f;
         if(ImGui::BeginTable("##wcSpecificWeaponsMerged", 5,
-            ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY,
+            ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY,
             {-1.f, listHeight}))
         {
-            ImGui::TableSetupColumn("Apply", ImGuiTableColumnFlags_WidthFixed, 52.f);
-            ImGui::TableSetupColumn("Weapon", ImGuiTableColumnFlags_WidthFixed, 340.f);
-            ImGui::TableSetupColumn("Mode", ImGuiTableColumnFlags_WidthFixed, 150.f);
-            ImGui::TableSetupColumn("Colours", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Font", ImGuiTableColumnFlags_WidthFixed, 300.f);
+            ImGui::TableSetupColumn("Apply", ImGuiTableColumnFlags_WidthFixed, 56.f);
+            ImGui::TableSetupColumn("Weapon", ImGuiTableColumnFlags_WidthFixed, 380.f);
+            ImGui::TableSetupColumn("Mode", ImGuiTableColumnFlags_WidthFixed, 170.f);
+            ImGui::TableSetupColumn("Colours", ImGuiTableColumnFlags_WidthFixed, 430.f);
+            ImGui::TableSetupColumn("Font", ImGuiTableColumnFlags_WidthFixed, 340.f);
             ImGui::TableHeadersRow();
 
             for(int i = 0; i < (int)specificWeapons.size(); ++i){
@@ -1090,7 +1090,7 @@ struct PageWeaponColour {
             scanSpecificWeapons();
         }
 
-        ImGui::BeginChild("##wc",{0,0},false);
+        ImGui::BeginChild("##wc",{0,0},false, ImGuiWindowFlags_HorizontalScrollbar);
         SectionLabel("Weapon Colour - InventoryItemTypes.GER");
         SectionNote("Build your category colours here, then use Specific Weapon Overrides only when individual weapons need exceptions.");
 
@@ -1119,7 +1119,7 @@ struct PageWeaponColour {
             scanSpecificWeapons();
         }
 
-        ImGui::BeginChild("##wcSpecificPage",{0,0},false);
+        ImGui::BeginChild("##wcSpecificPage",{0,0},false, ImGuiWindowFlags_HorizontalScrollbar);
         SectionLabel("Specific Weapon Overrides - InventoryItemTypes.GER");
         SectionNote("This tool shares the same target file and run output as Weapon Colour. Use it for one-off weapon exceptions.");
 
