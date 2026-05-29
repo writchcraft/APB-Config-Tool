@@ -339,7 +339,7 @@ If you want to edit a premade config, put the files in:
 
 Download `APBConfigTool.exe` from the project's **Releases** page. End users do not need to download the source code unless they want to build the project themselves.
 
-If I have enough motivation I will build this into [apb.gallery](https://apb.gallery/home) but I want to add more features to this tool first
+You can also check it out at [apb.gallery/config](https://apb.gallery/config)
 
 **Please respect the work that went into this project. Do not copy, extract, or reuse parts of this program in your own tools without permission.**
 
