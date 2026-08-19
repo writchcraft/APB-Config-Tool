@@ -1,7 +1,7 @@
 # APB Config Tool
 
 > [!Important]
-> # This is currently not being updated so please go to apb.gallery/config for future updates.
+> # This is currently not being updated so please go to [apb.gallery/config](https://apb.gallery/config) for future updates.
 
 ## Disclaimer
 
