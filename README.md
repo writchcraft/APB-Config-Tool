@@ -1,5 +1,8 @@
 # APB Config Tool
 
+> [!Important]
+> # This is currently not being updated so please go to apb.gallery/config for future updates.
+
 ## Disclaimer
 
 This project is an unofficial third-party utility.
