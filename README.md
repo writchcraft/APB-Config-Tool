@@ -318,7 +318,7 @@ Convert APB RGB colour tags to hex values and convert RGB values back into APB t
 </details>
 
 <details>
-<summary><strong>Theme Maker</strong></summary>
+<summary><strong>Color Theme Maker</strong></summary>
 
 Manage theme and premade-config folder locations used by the application.
 
