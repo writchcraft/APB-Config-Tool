@@ -581,13 +581,18 @@ static void inspectEditableColourTags(
         if(!isTitleLine){
             for(std::sregex_iterator it(line.begin(), line.end(), openRgbTag), end; it != end; ++it){
                 const std::smatch& match = *it;
-                const std::string value = normaliseTagValue(match[1].str());
-                { float r, g, b; if(std::sscanf(value.c_str(), "R=%f G=%f B=%f", &r, &g, &b) != 3) continue; }
+                const std::string rawValue = normaliseTagValue(match[1].str());
+                float r, g, b;
+                if(std::sscanf(rawValue.c_str(), "R=%f G=%f B=%f", &r, &g, &b) != 3) continue;
+                // Re-format through the same normaliser used at export/substitution time
+                // (normaliseRgbValue), so this key matches regardless of the source
+                // file's original float precision.
+                const std::string value = normaliseRgbValue(r, g, b);
                 const std::string key = "rgb:" + value;
                 auto& acc = editableValues[key];
                 if(acc.value.kind.empty()){
                     acc.value.kind = "RGB";
-                    acc.value.value = value.empty() ? "(empty)" : value;
+                    acc.value.value = value;
                     acc.value.replacementHint = "<Color:R={r} G={g} B={b}>";
                 }
                 acc.value.occurrences++;

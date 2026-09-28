@@ -4070,6 +4070,16 @@ struct PagePremadeConfigs {
         options.templateName = summaries[(size_t)templateIdx].name;
         options.outputDir    = outputDir;
 
+        // Build colour substitutions from edited flat "Detected Colours" rows
+        for(const auto& [orig, rgb] : rgbOverrides){
+            float origRgb[3];
+            parseRgbValue(orig, origRgb);
+            if(RgbEqual({origRgb[0], origRgb[1], origRgb[2]}, rgb))
+                continue; // unchanged, nothing to substitute
+            options.colourSubstitutions[orig] =
+                "R=" + fmtF(rgb[0]) + " G=" + fmtF(rgb[1]) + " B=" + fmtF(rgb[2]);
+        }
+
         // Build colour substitutions from enabled gradient overrides
         const auto& summary = summaries[(size_t)templateIdx];
         for(const auto& grad : summary.editableGradients){
