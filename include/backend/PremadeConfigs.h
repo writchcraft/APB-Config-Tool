@@ -57,8 +57,11 @@ struct PremadeConfigExportOptions {
     std::string templateName;
     std::string outputDir;
     // Optional colour substitutions: normalised-old-value → normalised-new-value.
-    // Applied to every RGB colour tag in every exported text file.
+    // Applied to every RGB colour tag (<Color:R=.. G=.. B=..>) in every exported text file.
     std::map<std::string,std::string> colourSubstitutions;
+    // Optional named colour substitutions: old-name → new-name.
+    // Applied to every named colour tag (<col:name>) in every exported text file.
+    std::map<std::string,std::string> namedSubstitutions;
 };
 
 struct PremadeConfigExportResult {

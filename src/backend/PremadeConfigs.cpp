@@ -864,16 +864,19 @@ static bool isGerTitleLine(const char* lineData, size_t lineLen){
 
 static std::string applyColourSubstitutions(
     const std::string& text,
-    const std::map<std::string,std::string>& subs)
+    const std::map<std::string,std::string>& rgbSubs,
+    const std::map<std::string,std::string>& namedSubs)
 {
-    if(subs.empty()) return text;
+    if(rgbSubs.empty() && namedSubs.empty()) return text;
 
     static const std::regex rgbTagRe(
         R"(<\s*Color\s*:(?!\s*/)\s*R\s*=\s*([-+]?[0-9]*\.?[0-9]+)\s*G\s*=\s*([-+]?[0-9]*\.?[0-9]+)\s*B\s*=\s*([-+]?[0-9]*\.?[0-9]+)\s*>)",
         std::regex::icase);
+    static const std::regex namedTagRe(R"(<\s*col\s*:\s*([^>]*)>)", std::regex::icase);
 
-    // Apply substitutions to one segment of text (no title-line logic)
-    auto subsSegment = [&](const std::string& seg) -> std::string {
+    // Apply RGB substitutions to one segment of text (no title-line logic)
+    auto subsRgbSegment = [&](const std::string& seg) -> std::string {
+        if(rgbSubs.empty()) return seg;
         std::string out;
         out.reserve(seg.size());
         size_t p = 0;
@@ -885,9 +888,31 @@ static std::string applyColourSubstitutions(
             const double r = std::strtod(m[1].str().c_str(), nullptr);
             const double g = std::strtod(m[2].str().c_str(), nullptr);
             const double b = std::strtod(m[3].str().c_str(), nullptr);
-            const auto sub = subs.find(normaliseRgbValue(r, g, b));
-            if(sub != subs.end())
+            const auto sub = rgbSubs.find(normaliseRgbValue(r, g, b));
+            if(sub != rgbSubs.end())
                 out += "<Color:" + sub->second + ">";
+            else
+                out.append(m[0].first, m[0].second);
+        }
+        out.append(seg, p);
+        return out;
+    };
+
+    // Apply named-tag substitutions to one segment of text
+    auto subsNamedSegment = [&](const std::string& seg) -> std::string {
+        if(namedSubs.empty()) return seg;
+        std::string out;
+        out.reserve(seg.size());
+        size_t p = 0;
+        for(std::sregex_iterator it(seg.begin(), seg.end(), namedTagRe), end; it != end; ++it){
+            const std::smatch& m = *it;
+            const size_t mpos = (size_t)m.position();
+            out.append(seg, p, mpos - p);
+            p = mpos + (size_t)m.length();
+            const std::string value = normaliseTagValue(m[1].str());
+            const auto sub = namedSubs.find(value);
+            if(sub != namedSubs.end())
+                out += "<col:" + sub->second + ">";
             else
                 out.append(m[0].first, m[0].second);
         }
@@ -907,7 +932,7 @@ static std::string applyColourSubstitutions(
         if(isGerTitleLine(text.data() + pos, lineLen))
             result.append(text, pos, lineLen);
         else
-            result += subsSegment(std::string(text.data() + pos, lineLen));
+            result += subsNamedSegment(subsRgbSegment(std::string(text.data() + pos, lineLen)));
 
         pos = lineEnd;
     }
@@ -992,11 +1017,12 @@ bool exportPremadeConfig(
         if(!loadFileBytes(file.absolutePath, bytes))
             throw std::runtime_error("Failed to load premade file: " + file.absolutePath);
 
-        if(!options.colourSubstitutions.empty()){
+        if(!options.colourSubstitutions.empty() || !options.namedSubstitutions.empty()){
             TextFile textFile;
             if(decodeTextFile(bytes, textFile)){
                 const std::string utf8 = wideToUtf8(textFile.text);
-                const std::string applied = applyColourSubstitutions(utf8, options.colourSubstitutions);
+                const std::string applied = applyColourSubstitutions(
+                    utf8, options.colourSubstitutions, options.namedSubstitutions);
                 if(applied != utf8){
                     textFile.text = utf8ToWide(applied);
                     bytes = encodeTextFile(textFile);

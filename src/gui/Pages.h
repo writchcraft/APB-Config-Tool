@@ -4079,6 +4079,11 @@ struct PagePremadeConfigs {
             options.colourSubstitutions[orig] =
                 "R=" + fmtF(rgb[0]) + " G=" + fmtF(rgb[1]) + " B=" + fmtF(rgb[2]);
         }
+        for(const auto& [orig, chosen] : namedOverrides){
+            if(chosen == orig)
+                continue; // unchanged, nothing to substitute
+            options.namedSubstitutions[orig] = chosen;
+        }
 
         // Build colour substitutions from enabled gradient overrides
         const auto& summary = summaries[(size_t)templateIdx];
